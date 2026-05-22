@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent — runs Arc Companion server on login.
+
+  Setup:
+    1. Edit the path below to match your actual laptop-server directory.
+    2. cp com.arc.companion.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.arc.companion.plist
+
+  To stop:
+    launchctl unload ~/Library/LaunchAgents/com.arc.companion.plist
+
+  Logs:
+    /tmp/arc-companion.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.arc.companion</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Update this path to your Python venv or system Python -->
+        <string>/usr/local/bin/python3</string>
+        <!-- Update this path to the laptop-server directory -->
+        <string>/PATH/TO/laptop-server/main.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <!-- Update this path too -->
+    <string>/PATH/TO/laptop-server</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/arc-companion.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/arc-companion.log</string>
+</dict>
+</plist>
