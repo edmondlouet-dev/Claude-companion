@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput, Modal, FlatList,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
+  Modal, FlatList, Image, ActivityIndicator,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +9,8 @@ import { Background } from '../components/Background';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { Pill } from '../components/Pill';
 import { useStore } from '../store';
-import { CATALOG } from '../products';
+import { CATALOG, registerProduct, type ProductCategory } from '../products';
+import { searchProducts, type OBFProduct } from '../services/openbeauty';
 import { C, R, T, S } from '../tokens';
 
 const BackArrow = () => (
@@ -23,6 +25,26 @@ const DropletIcon = () => (
   </Svg>
 );
 
+interface ProductThumbProps { uri: string | null }
+const ProductThumb: React.FC<ProductThumbProps> = ({ uri }) => {
+  const [failed, setFailed] = useState(false);
+  if (!uri || failed) {
+    return (
+      <View style={styles.thumbFallback}>
+        <DropletIcon />
+      </View>
+    );
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.thumb}
+      onError={() => setFailed(true)}
+      resizeMode="contain"
+    />
+  );
+};
+
 interface Props {
   onBack: () => void;
 }
@@ -31,12 +53,45 @@ export const Products: React.FC<Props> = ({ onBack }) => {
   const insets = useSafeAreaInsets();
   const { owned, addProduct, removeProduct } = useStore();
   const [showAdd, setShowAdd] = useState(false);
-  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<OBFProduct[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const catalogNames = Object.keys(CATALOG);
-  const filtered = catalogNames.filter(
-    n => n.toLowerCase().includes(search.toLowerCase()) && !owned.includes(n)
-  );
+  const handleSearch = useCallback((text: string) => {
+    setQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.length < 2) { setResults([]); setSearched(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const data = await searchProducts(text);
+        setResults(data.filter(p => !owned.includes(p.name)));
+        setSearched(true);
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 420);
+  }, [owned]);
+
+  const handleAdd = (product: OBFProduct) => {
+    registerProduct(product.name, product.category as ProductCategory);
+    addProduct(product.name);
+    setShowAdd(false);
+    setQuery('');
+    setResults([]);
+    setSearched(false);
+  };
+
+  const closeModal = () => {
+    setShowAdd(false);
+    setQuery('');
+    setResults([]);
+    setSearched(false);
+  };
 
   return (
     <View style={styles.root}>
@@ -62,21 +117,18 @@ export const Products: React.FC<Props> = ({ onBack }) => {
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Section header */}
           <View style={styles.sectionH}>
             <Text style={T.kicker}>OWNED</Text>
             <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{owned.length}</Text>
           </View>
 
-          {/* Product list */}
           {owned.map(name => {
             const info = CATALOG[name];
-            if (!info) return null;
-            const toneLabel = info.tone === 'both' ? 'AM/PM' : info.tone;
+            const toneLabel = info?.tone === 'both' ? 'AM/PM' : (info?.tone ?? 'AM/PM');
             return (
               <FlutedGlass key={name} padding={12} style={{ marginBottom: 8 }}>
                 <View style={styles.productRow}>
-                  <View style={styles.iconWrap}>
+                  <View style={styles.thumbFallback}>
                     <DropletIcon />
                   </View>
                   <View style={{ flex: 1 }}>
@@ -84,9 +136,9 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                       {name}
                     </Text>
                     <View style={styles.pillRow}>
-                      <Pill label={info.category} />
+                      {info?.category && <Pill label={info.category} />}
                       <Pill label={toneLabel} />
-                      {info.actives.slice(0, 2).map(a => (
+                      {(info?.actives ?? []).slice(0, 2).map(a => (
                         <Pill key={a} label={a} variant="accent" />
                       ))}
                     </View>
@@ -104,7 +156,6 @@ export const Products: React.FC<Props> = ({ onBack }) => {
             );
           })}
 
-          {/* Add product button */}
           <TouchableOpacity
             style={styles.addBtn}
             onPress={() => setShowAdd(true)}
@@ -115,47 +166,79 @@ export const Products: React.FC<Props> = ({ onBack }) => {
         </ScrollView>
       </View>
 
-      {/* Add product modal */}
-      <Modal visible={showAdd} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowAdd(false)}>
+      {/* Add product modal — live OBF search */}
+      <Modal visible={showAdd} animationType="slide" presentationStyle="formSheet" onRequestClose={closeModal}>
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
             <Text style={[T.h2, { fontSize: 18 }]}>Add product</Text>
-            <TouchableOpacity onPress={() => { setShowAdd(false); setSearch(''); }} activeOpacity={0.7}>
+            <TouchableOpacity onPress={closeModal} activeOpacity={0.7}>
               <Text style={[T.body, { color: C.ink3, fontSize: 18 }]}>✕</Text>
             </TouchableOpacity>
           </View>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search products…"
-            placeholderTextColor={C.ink3}
-            value={search}
-            onChangeText={setSearch}
-            autoFocus
-          />
+
+          <View style={styles.searchWrap}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search millions of products…"
+              placeholderTextColor={C.ink3}
+              value={query}
+              onChangeText={handleSearch}
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {loading && <ActivityIndicator style={styles.searchSpinner} size="small" color={C.accent} />}
+          </View>
+
+          {!searched && !loading && (
+            <View style={styles.emptyState}>
+              <Text style={[T.kicker, { color: C.ink3, textAlign: 'center' }]}>
+                SEARCH BY BRAND, NAME, OR INGREDIENT
+              </Text>
+              <Text style={[T.bodySm, { color: C.ink4, textAlign: 'center', marginTop: 6 }]}>
+                Powered by Open Beauty Facts — millions of real products
+              </Text>
+            </View>
+          )}
+
+          {searched && results.length === 0 && !loading && (
+            <View style={styles.emptyState}>
+              <Text style={[T.kicker, { color: C.ink3, textAlign: 'center' }]}>NO RESULTS</Text>
+              <Text style={[T.bodySm, { color: C.ink4, textAlign: 'center', marginTop: 6 }]}>
+                Try a different name or brand
+              </Text>
+            </View>
+          )}
+
           <FlatList
-            data={filtered}
-            keyExtractor={item => item}
-            renderItem={({ item }) => {
-              const info = CATALOG[item];
-              return (
-                <TouchableOpacity
-                  style={styles.catalogRow}
-                  onPress={() => { addProduct(item); setShowAdd(false); setSearch(''); }}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[T.body, { fontWeight: '500', color: C.ink }]} numberOfLines={1}>{item}</Text>
-                    <View style={styles.pillRow}>
-                      <Pill label={info?.category ?? ''} />
-                      {info?.actives.slice(0, 2).map(a => <Pill key={a} label={a} variant="accent" />)}
-                    </View>
+            data={results}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.catalogRow}
+                onPress={() => handleAdd(item)}
+                activeOpacity={0.7}
+              >
+                <ProductThumb uri={item.imageUrl} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[T.body, { fontWeight: '500', color: C.ink }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  {item.brand ? (
+                    <Text style={[T.bodySm, { color: C.ink3, marginTop: 1 }]} numberOfLines={1}>
+                      {item.brand}
+                    </Text>
+                  ) : null}
+                  <View style={styles.pillRow}>
+                    <Pill label={item.category} />
                   </View>
-                  <Text style={[T.button, { color: C.accent }]}>+ Add</Text>
-                </TouchableOpacity>
-              );
-            }}
+                </View>
+                <Text style={[T.button, { color: C.accent, flexShrink: 0, marginLeft: 8 }]}>+ Add</Text>
+              </TouchableOpacity>
+            )}
             ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: C.line }} />}
             contentContainerStyle={{ paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
           />
         </View>
       </Modal>
@@ -189,9 +272,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  iconWrap: {
-    width: 32,
-    height: 32,
+  thumb: {
+    width: 40,
+    height: 40,
+    borderRadius: R.md,
+    backgroundColor: C.surface2,
+    flexShrink: 0,
+  },
+  thumbFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: R.md,
+    backgroundColor: C.surface2,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -230,22 +322,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: S.gutter,
     marginBottom: 16,
   },
-  searchInput: {
+  searchWrap: {
     marginHorizontal: S.gutter,
     marginBottom: 12,
+    position: 'relative',
+  },
+  searchInput: {
     backgroundColor: C.surface2,
     borderRadius: R.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    paddingRight: 36,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     color: C.ink,
+  },
+  searchSpinner: {
+    position: 'absolute',
+    right: 10,
+    top: 10,
+  },
+  emptyState: {
+    paddingTop: 48,
+    paddingHorizontal: S.gutter,
+    alignItems: 'center',
   },
   catalogRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: S.gutter,
     paddingVertical: 12,
-    gap: 10,
+    gap: 12,
   },
 });

@@ -58,6 +58,14 @@ export const CATALOG: Record<string, ProductInfo> = {
   'La Roche-Posay Anthelios SPF 60':{ category: 'spf',         actives: ['mexoryl', 'tinosorb'],          tone: 'AM',   mins: 1 },
 };
 
+// Registers a product fetched from Open Beauty Facts into the CATALOG so the
+// routine builder can pick it up. Called before addProduct() in the store.
+export function registerProduct(name: string, category: ProductCategory, actives: string[] = []): void {
+  if (!CATALOG[name]) {
+    CATALOG[name] = { category, actives, tone: 'both', mins: 1 };
+  }
+}
+
 export function buildRoutine(owned: string[], when: Tone): RoutineStep[] {
   const matched = owned
     .map(name => {

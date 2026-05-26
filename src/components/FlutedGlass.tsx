@@ -21,6 +21,7 @@ import {
   Animated,
   PanResponder,
   StyleSheet,
+  StyleProp,
   ViewStyle,
   LayoutChangeEvent,
 } from 'react-native';
@@ -30,7 +31,7 @@ import { C, R } from '../tokens';
 
 interface Props {
   children: ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   radius?: number;
   /** Set true on screens where interaction would be confusing (modals etc) */
   noTouch?: boolean;

@@ -1,62 +1,76 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
+import { signIn } from '../services/auth';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
 
-export const Login: React.FC = () => {
-  const { login, finishOnboarding } = useStore();
-  const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState('alex@hey.com');
-  const [password, setPassword] = useState('••••••••••');
-  const [emailFocus, setEmailFocus] = useState(false);
-  const [passFocus, setPassFocus] = useState(false);
+interface Props {
+  onSignUp: () => void;
+}
 
-  const handleContinue = () => {
-    login();
-    finishOnboarding(); // Skip onboarding for demo — set onboarded=true directly
+export const Login: React.FC<Props> = ({ onSignUp }) => {
+  const { login } = useStore();
+  const insets = useSafeAreaInsets();
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [emailFocus, setEmailFocus] = useState(false);
+  const [passFocus,  setPassFocus]  = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+
+  const handleContinue = async () => {
+    if (!email.trim()) { setError('Please enter your email.'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const user = await signIn(email.trim(), password);
+      login(user);
+    } catch (e: any) {
+      setError(e.message ?? 'Sign-in failed. Check your email and password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <View style={styles.root}>
       <Background />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
+          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 28, paddingBottom: insets.bottom + 28 }]}
           keyboardShouldPersistTaps="handled"
         >
           {/* Hero */}
           <View style={styles.hero}>
-            <FaceLogo size={64} animated color={C.ink} />
+            <FaceLogo size={68} animated color={C.ink} />
             <Text style={styles.wordmark}>poreless</Text>
-            <Text style={[T.kicker, { color: C.ink3, marginTop: 4, letterSpacing: 1.2, textAlign: 'center' }]}>
-              small things, every day. that&apos;s the whole secret.
+            <Text style={[T.kicker, { color: C.ink3, marginTop: 6, textAlign: 'center', lineHeight: 17, letterSpacing: 1.0 }]}>
+              ritual is everything.
             </Text>
           </View>
 
+          {/* Form */}
           <View style={styles.form}>
             {/* Email */}
             <View>
               <Text style={[T.kicker, { marginBottom: 6 }]}>EMAIL</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  emailFocus && styles.inputFocus,
-                ]}
+                style={[styles.input, emailFocus && styles.inputFocus]}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={t => { setEmail(t); setError(''); }}
                 onFocus={() => setEmailFocus(true)}
                 onBlur={() => setEmailFocus(false)}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
+                placeholder="you@example.com"
+                placeholderTextColor={C.ink4}
               />
             </View>
 
@@ -64,21 +78,29 @@ export const Login: React.FC = () => {
             <View style={{ marginTop: 16 }}>
               <Text style={[T.kicker, { marginBottom: 6 }]}>PASSWORD</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  passFocus && styles.inputFocus,
-                ]}
+                style={[styles.input, passFocus && styles.inputFocus]}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={t => { setPassword(t); setError(''); }}
                 onFocus={() => setPassFocus(true)}
                 onBlur={() => setPassFocus(false)}
                 secureTextEntry
+                placeholder="Your password"
+                placeholderTextColor={C.ink4}
               />
             </View>
 
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={[T.bodySm, { color: C.danger }]}>{error}</Text>
+              </View>
+            ) : null}
+
             {/* Primary CTA */}
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleContinue} activeOpacity={0.85}>
-              <Text style={[T.button, { color: C.bg, fontSize: 14 }]}>Continue →</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleContinue} activeOpacity={0.85} disabled={loading}>
+              {loading
+                ? <ActivityIndicator color={C.bg} />
+                : <Text style={[T.button, { color: C.bg, fontSize: 14 }]}>Continue →</Text>
+              }
             </TouchableOpacity>
 
             {/* Divider */}
@@ -90,11 +112,27 @@ export const Login: React.FC = () => {
 
             {/* Social buttons */}
             <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.ghostBtn} activeOpacity={0.7}>
-                <Text style={[T.button, { color: C.ink2 }]}>Apple</Text>
+              <TouchableOpacity
+                style={styles.ghostBtn}
+                activeOpacity={0.7}
+                onPress={() => setError('Apple sign-in coming soon.')}
+              >
+                <Text style={[T.button, { color: C.ink2 }]}> Apple</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.ghostBtn} activeOpacity={0.7}>
-                <Text style={[T.button, { color: C.ink2 }]}>Google</Text>
+              <TouchableOpacity
+                style={styles.ghostBtn}
+                activeOpacity={0.7}
+                onPress={() => setError('Google sign-in coming soon.')}
+              >
+                <Text style={[T.button, { color: C.ink2 }]}>G Google</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sign-up link */}
+            <View style={styles.signUpRow}>
+              <Text style={[T.bodySm, { color: C.ink3 }]}>New here? </Text>
+              <TouchableOpacity onPress={onSignUp} activeOpacity={0.7}>
+                <Text style={[T.bodySm, { color: C.accent, fontWeight: '600' }]}>Create an account →</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -106,25 +144,16 @@ export const Login: React.FC = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: {
-    paddingHorizontal: S.gutter,
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
+  scroll: { paddingHorizontal: S.gutter, flexGrow: 1, justifyContent: 'center' },
+  hero: { alignItems: 'center', marginBottom: 44 },
   wordmark: {
     fontFamily: 'CormorantGaramond_400Italic',
-    fontSize: 44,
-    letterSpacing: -0.88,
+    fontSize: 48,
+    letterSpacing: -0.96,
     color: C.ink,
-    marginTop: 12,
+    marginTop: 14,
   },
-  form: {
-    gap: 0,
-  },
+  form: {},
   input: {
     backgroundColor: C.surface,
     borderWidth: 1,
@@ -136,13 +165,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: C.ink,
   },
-  inputFocus: {
-    borderColor: C.ink2,
-    shadowColor: C.surface2,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 3,
-    elevation: 2,
+  inputFocus: { borderColor: C.ink2 },
+  errorBox: {
+    backgroundColor: '#FEF0EF',
+    borderRadius: R.md,
+    padding: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#F5C2BF',
   },
   primaryBtn: {
     backgroundColor: C.ink,
@@ -157,15 +187,8 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 14,
   },
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: C.line,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  line: { flex: 1, height: 1, backgroundColor: C.line },
+  socialRow: { flexDirection: 'row', gap: 10 },
   ghostBtn: {
     flex: 1,
     borderWidth: 1,
@@ -174,5 +197,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     backgroundColor: C.surface,
+  },
+  signUpRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 22,
   },
 });

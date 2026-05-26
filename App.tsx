@@ -4,7 +4,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Google fonts
 import {
   CormorantGaramond_400Regular,
   CormorantGaramond_400Regular_Italic,
@@ -21,57 +20,68 @@ import {
 
 import { StoreProvider, useStore } from './src/store';
 import { TabBar } from './src/components/TabBar';
-import { Background } from './src/components/Background';
 import { Login } from './src/screens/Login';
+import { SignUp } from './src/screens/SignUp';
+import { Questionnaire } from './src/screens/Questionnaire';
 import { Today } from './src/screens/Today';
 import { Scan } from './src/screens/Scan';
-import { Lookmax } from './src/screens/Lookmax';
-import { Trend } from './src/screens/Trend';
+import { Proportions } from './src/screens/Proportions';
+import { Rituals } from './src/screens/Rituals';
 import { You } from './src/screens/You';
 import { Products } from './src/screens/Products';
 
 SplashScreen.preventAutoHideAsync();
 
-type TabKey = 'today' | 'scan' | 'lookmax' | 'trend' | 'you';
-type Screen = 'main' | 'products';
+type TabKey = 'today' | 'scan' | 'proportions' | 'rituals' | 'you';
+type AuthScreen = 'login' | 'signup';
 
 const MainApp: React.FC = () => {
-  const { authed, mode, setMode } = useStore();
+  const { authed, questionnaireComplete, setMode } = useStore();
   const [activeTab, setActiveTab] = useState<TabKey>('today');
-  const [screen, setScreen] = useState<Screen>('main');
+  const [showProducts, setShowProducts] = useState(false);
+  const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
 
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
-    setMode(tab === 'lookmax' ? 'lookmax' : 'normal');
+    setMode(tab === 'proportions' ? 'lookmax' : 'normal');
   };
 
-  if (!authed) return <Login />;
-
-  if (screen === 'products') {
-    return <Products onBack={() => setScreen('main')} />;
+  // Step 1: Onboarding questionnaire
+  if (!questionnaireComplete) {
+    return <Questionnaire />;
   }
 
+  // Step 2: Auth
+  if (!authed) {
+    if (authScreen === 'signup') {
+      return <SignUp onBack={() => setAuthScreen('login')} />;
+    }
+    return <Login onSignUp={() => setAuthScreen('signup')} />;
+  }
+
+  // Step 3: Products overlay
+  if (showProducts) {
+    return <Products onBack={() => setShowProducts(false)} />;
+  }
+
+  // Step 4: Main tab interface
   return (
     <View style={styles.app}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-      {/* Tab content */}
       <View style={{ flex: 1 }}>
-        {activeTab === 'today'   && <Today />}
-        {activeTab === 'scan'    && <Scan />}
-        {activeTab === 'lookmax' && <Lookmax />}
-        {activeTab === 'trend'   && <Trend />}
-        {activeTab === 'you'     && (
-          <You onProducts={() => setScreen('products')} />
-        )}
+        {activeTab === 'today'       && <Today />}
+        {activeTab === 'scan'        && <Scan />}
+        {activeTab === 'proportions' && <Proportions />}
+        {activeTab === 'rituals'     && <Rituals />}
+        {activeTab === 'you'         && <You onProducts={() => setShowProducts(true)} />}
       </View>
 
-      {/* Custom tab bar */}
       <View style={styles.tabBarContainer}>
         <TabBar
           active={activeTab}
           onChange={handleTabChange}
-          mode={mode}
+          mode={activeTab === 'proportions' ? 'lookmax' : 'normal'}
         />
       </View>
     </View>

@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated, LayoutAnimation,
-  Platform, UIManager,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
+  LayoutAnimation, Platform, UIManager,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import Svg, { Path, Polyline } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { FlutedGlass } from './FlutedGlass';
 import { C, R, T } from '../tokens';
 
@@ -26,21 +26,23 @@ export const RoutineRow: React.FC<Props> = ({
 }) => {
   const [done, setDone] = useState(defaultDone);
   const [open, setOpen] = useState(false);
-  const opacity = useRef(new Animated.Value(1)).current;
+  // Fade content when done (no strikethrough — just dimmer + heavier glass)
+  const contentOpacity = useRef(new Animated.Value(defaultDone ? 0.55 : 1)).current;
 
   const toggle = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setDone(d => !d);
-    Animated.timing(opacity, {
-      toValue: done ? 1 : 0.6,
+    const next = !done;
+    setDone(next);
+    Animated.timing(contentOpacity, {
+      toValue: next ? 0.55 : 1,
       duration: 200,
       useNativeDriver: true,
     }).start();
   };
 
   return (
-    <Animated.View style={{ opacity, marginBottom: 6 }}>
+    <View style={{ marginBottom: 6 }}>
       <FlutedGlass
         padding={12}
         style={done ? styles.done : styles.normal}
@@ -50,22 +52,23 @@ export const RoutineRow: React.FC<Props> = ({
           <TouchableOpacity onPress={toggle} style={[styles.check, done && styles.checkDone]}>
             {done && (
               <Svg width={11} height={11} viewBox="0 0 24 24">
-                <Path d="M5 13l4 4L19 7" stroke={C.bg} strokeWidth={2.6} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <Path
+                  d="M5 13l4 4L19 7"
+                  stroke={C.bg}
+                  strokeWidth={2.6}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </Svg>
             )}
           </TouchableOpacity>
 
-          <View style={{ flex: 1 }}>
+          {/* Content fades when done — no strikethrough */}
+          <Animated.View style={{ flex: 1, opacity: contentOpacity }}>
             <View style={styles.titleRow}>
-              <Text
-                style={[
-                  T.body,
-                  styles.title,
-                  done && styles.titleDone,
-                ]}
-                numberOfLines={1}
-              >
-                <Text style={[T.num, { fontSize: 11, color: C.ink3, marginRight: 6 }]}>
+              <Text style={[T.body, styles.title]} numberOfLines={1}>
+                <Text style={[T.num, { fontSize: 11, color: C.ink3 }]}>
                   {String(idx).padStart(2, '0')}{' '}
                 </Text>
                 {stepName}
@@ -93,24 +96,23 @@ export const RoutineRow: React.FC<Props> = ({
                 <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>{why}</Text>
               </View>
             )}
-          </View>
+          </Animated.View>
         </View>
       </FlutedGlass>
-    </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   normal: { borderColor: C.line },
-  done:   { backgroundColor: C.accentSoft, borderColor: 'transparent' },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
+  done: {
+    // Slightly more opaque glass + border gone to read as "settled/done"
+    borderColor: 'transparent',
+    backgroundColor: 'rgba(255,255,253,0.72)',
   },
+  row: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   check: {
-    width: 16,
-    height: 16,
+    width: 16, height: 16,
     borderRadius: 3,
     borderWidth: 1.4,
     borderColor: C.line3,
@@ -120,10 +122,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     flexShrink: 0,
   },
-  checkDone: {
-    backgroundColor: C.ink,
-    borderColor: C.ink,
-  },
+  checkDone: { backgroundColor: C.ink, borderColor: C.ink },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -136,16 +135,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: C.ink,
   },
-  titleDone: {
-    textDecorationLine: 'line-through',
-    color: C.accentInk,
-  },
-  whyBtn: {
-    marginTop: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
+  whyBtn: { marginTop: 6 },
   whyLabel: {
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 10.5,
