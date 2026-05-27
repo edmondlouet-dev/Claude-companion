@@ -21,55 +21,36 @@ const LM_METRICS = [
 ];
 
 /**
- * Minimalist single-line face — inspired by the one-stroke art style in the
- * reference image. Clean oval, one almond eye, subtle nose, simple lips.
+ * One-line art face matching the reference image:
+ * floating eyebrow arches, almond eye with pupil, long flowing nose, nostril, lips.
+ * No face oval — features float in space.
  */
 const MinimalistFace: React.FC<{ size: number }> = ({ size }) => {
-  const s = { fill: 'none', stroke: C.ink3, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  const thin  = { ...s, strokeWidth: 0.9 };
-  const thick = { ...s, strokeWidth: 1.0, stroke: C.ink2 };
+  const s = { fill: 'none', stroke: C.ink2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   return (
-    <Svg width={size} height={size} viewBox="0 0 200 230">
-      {/* ── Face outline — clean oval ────────────────────────────────────── */}
-      <Path
-        d="M 100 26
-           C 66 26 42 58 42 110
-           C 42 162 64 203 100 208
-           C 136 203 158 162 158 110
-           C 158 58 134 26 100 26 Z"
-        {...thick}
-      />
+    <Svg width={size} height={size * 1.25} viewBox="0 0 200 250">
+      {/* ── Eyebrow — two arching curves ────────────────────────────────── */}
+      <Path d="M 44 56 C 80 36 138 38 168 54" {...s} strokeWidth={1.4} />
+      <Path d="M 48 66 C 82 50 136 50 164 64" {...s} strokeWidth={0.9} />
 
-      {/* ── One eye (right, almond) — two arcs meeting at corners ────────── */}
-      <Path d="M 70 96 C 77 87 96 87 103 96" {...thin} />
-      <Path d="M 70 96 C 77 103 96 103 103 96" {...thin} />
-      {/* pupil dot */}
-      <Circle cx={86} cy={96} r={2.8} fill={C.ink3} />
+      {/* ── Eye — almond shape (two arcs meeting at corners) ──────────── */}
+      <Path d="M 56 92 C 82 70 138 70 158 88" {...s} strokeWidth={1.5} />
+      <Path d="M 56 92 C 82 110 138 110 158 88" {...s} strokeWidth={1.5} />
+      {/* iris ring */}
+      <Circle cx={107} cy={90} r={12} {...s} strokeWidth={1.2} />
+      {/* pupil */}
+      <Circle cx={107} cy={90} r={4.5} fill={C.ink2} />
 
-      {/* ── Nose — minimal bridge line ──────────────────────────────────── */}
-      <Path d="M 99 112 C 97 126 95 134 97 140 C 101 145 104 145 107 140" {...thin} />
+      {/* ── Nose — long flowing curve from inner eye downward ─────────── */}
+      <Path d="M 102 112 C 98 130 94 152 92 170 C 90 184 94 194 103 200" {...s} strokeWidth={1.3} />
 
-      {/* ── Lips — upper bow + lower arc ────────────────────────────────── */}
-      {/* upper lip philtrum bow */}
-      <Path d="M 80 161 Q 90 155 100 158 Q 110 155 120 161" {...thin} />
-      {/* lower lip */}
-      <Path d="M 80 161 Q 100 170 120 161" {...thin} />
+      {/* ── Nostril — small circle at nose base ───────────────────────── */}
+      <Circle cx={103} cy={202} r={5} {...s} strokeWidth={1.1} />
 
-      {/* ── Golden-ratio overlay lines (faint) ──────────────────────────── */}
-      {/* vertical centre */}
-      <Line x1={100} y1={30} x2={100} y2={205}
-        stroke={C.accent} strokeOpacity={0.18} strokeWidth={0.5} strokeDasharray="3 5" />
-      {/* horizontal eye line */}
-      <Line x1={45} y1={96} x2={155} y2={96}
-        stroke={C.accent} strokeOpacity={0.18} strokeWidth={0.5} strokeDasharray="3 5" />
-      {/* third-line */}
-      <Line x1={45} y1={158} x2={155} y2={158}
-        stroke={C.accent} strokeOpacity={0.14} strokeWidth={0.5} strokeDasharray="3 5" />
-
-      {/* ── Landmark accent dots ─────────────────────────────────────────── */}
-      {[[100, 26], [86, 96], [100, 140], [100, 160], [100, 207]].map(([x, y], i) => (
-        <Circle key={i} cx={x} cy={y} r={2} fill={C.accentSoft} stroke={C.accent} strokeWidth={0.7} />
-      ))}
+      {/* ── Upper lip — cupid's bow ───────────────────────────────────── */}
+      <Path d="M 68 228 C 82 214 98 222 108 218 C 118 222 134 214 148 228" {...s} strokeWidth={1.5} />
+      {/* ── Lower lip — full arc ──────────────────────────────────────── */}
+      <Path d="M 68 228 Q 108 246 148 228" {...s} strokeWidth={1.5} />
     </Svg>
   );
 };

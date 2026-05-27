@@ -33,10 +33,9 @@ export async function searchProducts(query: string, page = 1): Promise<OBFProduc
   const url =
     `${BASE}/cgi/search.pl` +
     `?search_terms=${encodeURIComponent(query)}` +
-    `&search_simple=1&action=process&json=1&page_size=30&page=${page}` +
-    `&tagtype_0=categories&tag_contains_0=contains&tag_0=beauty`;
+    `&search_simple=1&action=process&json=1&page_size=30&page=${page}`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: { 'User-Agent': 'Poreless/1.0 (edmondlouet@gmail.com)' } });
   if (!res.ok) return [];
   const data = await res.json();
 
