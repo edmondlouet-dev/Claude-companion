@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     flexShrink: 0,
   },
-  checkDone: { backgroundColor: C.ink, borderColor: C.ink },
+  checkDone: { backgroundColor: C.accent, borderColor: C.accent },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

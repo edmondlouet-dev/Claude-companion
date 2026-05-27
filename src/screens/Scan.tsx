@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Dimensions,
+  ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Svg, { Ellipse, Line, G, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
@@ -16,33 +16,48 @@ import { C, R, T, S } from '../tokens';
 
 type Step = 'preview' | 'scanning' | 'done';
 
+type SkinConcern = 'Redness' | 'Dryness' | 'Breakout' | 'Irritation' | 'Oiliness';
+const ALL_CONCERNS: SkinConcern[] = ['Redness', 'Dryness', 'Breakout', 'Irritation', 'Oiliness'];
+
+const CONCERN_ICON: Record<SkinConcern, string> = {
+  Redness: '🔴',
+  Dryness: '💧',
+  Breakout: '⚠️',
+  Irritation: '🌡️',
+  Oiliness: '✨',
+};
+
 const { width: SCREEN_W } = Dimensions.get('window');
 const CAM_H = Math.min(340, SCREEN_W * 0.9);
+
+const metricsFromScores = (s: any) => [
+  { key: 'overall',   value: String(s.overall),   label: 'Overall',   dot: 'good' as const },
+  { key: 'hydration', value: String(s.hydration),  label: 'Hydration', dot: s.hydration < 65 ? 'warn' as const : 'good' as const },
+  { key: 'texture',   value: String(s.texture),    label: 'Texture',   dot: 'good' as const },
+  { key: 'pores',     value: String(s.pores),      label: 'Pores',     dot: s.pores < 65 ? 'warn' as const : 'good' as const },
+  { key: 'redness',   value: String(s.redness),    label: 'Calm',      dot: 'good' as const },
+  { key: 'oil',       value: String(s.oil),        label: 'Oil',       dot: s.oil < 55 ? 'warn' as const : 'good' as const },
+  { key: 'acne',      value: String(s.acne),       label: 'Acne',      dot: s.acne < 65 ? 'warn' as const : 'good' as const },
+  { key: 'tone',      value: String(s.tone),       label: 'Tone',      dot: 'good' as const },
+];
 
 export const Scan: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { setLastScores } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
-  const [step, setStep]   = useState<Step>('preview');
+  const [step, setStep]     = useState<Step>('preview');
   const [scores, setScores] = useState<any>(null);
-  const [region, setRegion] = useState('Forehead');
+  const [flagged, setFlagged] = useState<Set<SkinConcern>>(new Set());
   const cameraRef = useRef<any>(null);
 
-  const regionTabs = ['Forehead', 'T-Zone', 'Cheeks', 'Chin'];
+  const toggleFlag = (c: SkinConcern) => {
+    setFlagged(prev => {
+      const next = new Set(prev);
+      next.has(c) ? next.delete(c) : next.add(c);
+      return next;
+    });
+  };
 
-  // ── Metrics built from scores ──────────────────────────────────────────────
-  const metricsFromScores = (s: any) => [
-    { key: 'overall',   value: String(s.overall),   label: 'Overall',   dot: 'good' as const },
-    { key: 'hydration', value: String(s.hydration),  label: 'Hydration', dot: s.hydration < 65 ? 'warn' as const : 'good' as const },
-    { key: 'texture',   value: String(s.texture),    label: 'Texture',   dot: 'good' as const },
-    { key: 'pores',     value: String(s.pores),      label: 'Pores',     dot: s.pores < 65 ? 'warn' as const : 'good' as const },
-    { key: 'redness',   value: String(s.redness),    label: 'Calm',      dot: 'good' as const },
-    { key: 'oil',       value: String(s.oil),        label: 'Oil',       dot: s.oil < 55 ? 'warn' as const : 'good' as const },
-    { key: 'acne',      value: String(s.acne),       label: 'Acne',      dot: s.acne < 65 ? 'warn' as const : 'good' as const },
-    { key: 'tone',      value: String(s.tone),       label: 'Tone',      dot: 'good' as const },
-  ];
-
-  // ── Capture + analyse ──────────────────────────────────────────────────────
   const capture = async () => {
     setStep('scanning');
     try {
@@ -61,13 +76,13 @@ export const Scan: React.FC = () => {
     }
   };
 
-  // ── Camera permission gate ─────────────────────────────────────────────────
   const PermissionPrompt = () => (
     <View style={styles.permBox}>
       <FaceLogo size={48} color={C.ink3} />
       <Text style={[T.h2, { textAlign: 'center', marginTop: 16 }]}>Camera access needed</Text>
       <Text style={[T.bodySm, { color: C.ink3, textAlign: 'center', marginTop: 8, lineHeight: 18 }]}>
-        Poreless uses your front camera to analyse your skin in real time. No images are stored or sent without your permission.
+        Poreless uses your front camera to analyse your skin in real time.
+        No images are stored or shared without your permission.
       </Text>
       <TouchableOpacity style={styles.primaryBtn} onPress={requestPermission} activeOpacity={0.85}>
         <Text style={[T.button, { color: C.bg, fontSize: 14 }]}>Allow camera →</Text>
@@ -78,7 +93,11 @@ export const Scan: React.FC = () => {
   return (
     <View style={styles.root}>
       <Background />
-      <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 100 }]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 100 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={[styles.header, { paddingHorizontal: S.gutter }]}>
           <View>
@@ -87,59 +106,24 @@ export const Scan: React.FC = () => {
               face <Text style={{ fontStyle: 'italic', color: C.accentInk }}>scan</Text>
             </Text>
           </View>
-          {!VISION_ENABLED && (
-            <View style={styles.aiBadge}>
-              <Text style={[T.kicker, { color: C.ink3, fontSize: 9 }]}>AI SIMULATED</Text>
-            </View>
-          )}
-          {VISION_ENABLED && (
-            <View style={[styles.aiBadge, { borderColor: C.accent }]}>
-              <Text style={[T.kicker, { color: C.accent, fontSize: 9 }]}>AI ACTIVE</Text>
-            </View>
-          )}
+          <View style={[styles.aiBadge, VISION_ENABLED ? { borderColor: C.accent } : {}]}>
+            <Text style={[T.kicker, { color: VISION_ENABLED ? C.accent : C.ink3, fontSize: 9 }]}>
+              {VISION_ENABLED ? 'AI ACTIVE' : 'AI SIMULATED'}
+            </Text>
+          </View>
         </View>
 
-        {/* Camera / Face-art preview */}
+        {/* Camera / face-art — NO box frame, just the figure */}
         <View style={[styles.cameraWrap, { marginHorizontal: S.gutter }]}>
           {permission?.granted ? (
-            <CameraView
-              ref={cameraRef}
-              style={StyleSheet.absoluteFill}
-              facing="front"
-            />
+            <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="front" />
           ) : (
-            // Face-art placeholder when no camera permission
             <View style={styles.logoPlaceholder}>
-              <FaceLogo size={SCREEN_W * 0.35} color={C.ink3} strokeWidth={0.8} />
+              <FaceLogo size={SCREEN_W * 0.38} color={C.ink3} strokeWidth={0.8} />
             </View>
           )}
 
-          {/* Scan SVG overlay */}
-          <Svg style={StyleSheet.absoluteFill} viewBox={`0 0 ${SCREEN_W - S.gutter * 2} ${CAM_H}`}>
-            <Ellipse
-              cx={(SCREEN_W - S.gutter * 2) / 2}
-              cy={CAM_H / 2}
-              rx={(SCREEN_W - S.gutter * 2) * 0.28}
-              ry={CAM_H * 0.42}
-              fill="none"
-              stroke={step === 'done' ? C.sage : C.ink}
-              strokeOpacity={step === 'done' ? 0.7 : 0.4}
-              strokeWidth={step === 'done' ? 1.4 : 1}
-              strokeDasharray={step === 'done' ? undefined : '5 4'}
-            />
-            {/* Corners */}
-            {([
-              [16, 16, 1, 1], [SCREEN_W - S.gutter*2 - 16, 16, -1, 1],
-              [16, CAM_H-16, 1, -1], [SCREEN_W - S.gutter*2 - 16, CAM_H-16, -1, -1],
-            ] as [number,number,number,number][]).map(([x,y,sx,sy], i) => (
-              <G key={i} stroke={C.ink} strokeOpacity={0.7} strokeWidth={1.4} fill="none">
-                <Line x1={x} y1={y} x2={x+14*sx} y2={y} />
-                <Line x1={x} y1={y} x2={x} y2={y+14*sy} />
-              </G>
-            ))}
-          </Svg>
-
-          {/* Status pill */}
+          {/* Status pill only */}
           <View style={styles.statusPill}>
             <Text style={[T.kicker, { color: 'white', letterSpacing: 0.8, fontSize: 9 }]}>
               {step === 'preview'  && '· good light · centred ·'}
@@ -155,8 +139,42 @@ export const Scan: React.FC = () => {
           )}
         </View>
 
-        {/* Permission prompt (shown inline if not granted) */}
+        {/* Permission prompt */}
         {!permission?.granted && <PermissionPrompt />}
+
+        {/* ── Skin concern flags — always visible ─────────────────────────── */}
+        <View style={{ paddingHorizontal: S.gutter, marginBottom: 14 }}>
+          <Text style={[T.kicker, { marginBottom: 8 }]}>FLAG A CONCERN</Text>
+          <View style={styles.flagRow}>
+            {ALL_CONCERNS.map(c => {
+              const active = flagged.has(c);
+              return (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.flagChip, active && styles.flagChipActive]}
+                  onPress={() => toggleFlag(c)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 13 }}>{CONCERN_ICON[c]}</Text>
+                  <Text style={[T.kicker, {
+                    color: active ? C.accentInk : C.ink3,
+                    fontSize: 9, letterSpacing: 0.4,
+                  }]}>
+                    {c.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {flagged.size > 0 && (
+            <FlutedGlass padding={10} style={{ marginTop: 8 }}>
+              <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>
+                ✦ {Array.from(flagged).join(' · ')} noted. These are logged with your next scan
+                to track improvement over time.
+              </Text>
+            </FlutedGlass>
+          )}
+        </View>
 
         {/* Results */}
         {step === 'done' && scores && (
@@ -168,29 +186,12 @@ export const Scan: React.FC = () => {
               <Text style={[T.bodySm, { color: C.ink2 }]}>{scores.message}</Text>
             </View>
             <View style={{ paddingHorizontal: S.gutter, marginBottom: 12 }}>
-              <MetricStrip
-                metrics={metricsFromScores(scores)}
-                active="overall"
-                onPick={() => {}}
-              />
-            </View>
-            {/* Region tabs */}
-            <View style={[styles.regionRow, { marginHorizontal: S.gutter }]}>
-              {regionTabs.map(r => (
-                <TouchableOpacity
-                  key={r}
-                  style={[styles.regionTab, r === region && styles.regionTabActive]}
-                  onPress={() => setRegion(r)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[T.kicker, { color: r === region ? C.accentInk : C.ink3 }]}>{r}</Text>
-                </TouchableOpacity>
-              ))}
+              <MetricStrip metrics={metricsFromScores(scores)} active="overall" onPick={() => {}} />
             </View>
           </>
         )}
 
-        {/* Quality checks (preview only) */}
+        {/* Quality checks */}
         {step === 'preview' && permission?.granted && (
           <View style={[styles.qualityRow, { marginHorizontal: S.gutter }]}>
             {[{ l: 'Light', v: 'Even' }, { l: 'Angle', v: '+0°' }, { l: 'Distance', v: '32 cm' }].map(q => (
@@ -226,27 +227,17 @@ export const Scan: React.FC = () => {
             )}
           </View>
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  screen: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: 14,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 },
   aiBadge: {
-    borderWidth: 1,
-    borderColor: C.line2,
-    borderRadius: R.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginBottom: 4,
+    borderWidth: 1, borderColor: C.line2, borderRadius: R.pill,
+    paddingHorizontal: 8, paddingVertical: 4, marginBottom: 4,
   },
   cameraWrap: {
     height: CAM_H,
@@ -258,52 +249,38 @@ const styles = StyleSheet.create({
   },
   logoPlaceholder: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#F0EAE0',
   },
   statusPill: {
-    position: 'absolute',
-    top: 12,
-    alignSelf: 'center',
+    position: 'absolute', top: 12, alignSelf: 'center',
     backgroundColor: 'rgba(0,0,0,0.52)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingHorizontal: 12, paddingVertical: 5,
     borderRadius: R.pill,
   },
   scanningOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(251,250,247,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  permBox: {
-    marginHorizontal: S.gutter,
-    alignItems: 'center',
-    padding: 20,
-    marginBottom: 14,
-  },
-  aiMessage: {
-    backgroundColor: C.accentSoft,
-    borderRadius: R.md,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: C.accent + '44',
-  },
-  qualityRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  regionRow: { flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' },
-  regionTab: {
-    paddingHorizontal: 10, paddingVertical: 5,
+  permBox: { marginHorizontal: S.gutter, alignItems: 'center', padding: 20, marginBottom: 14 },
+  flagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  flagChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 8,
     borderRadius: R.pill,
     borderWidth: 1, borderColor: C.line2,
     backgroundColor: C.surface,
   },
-  regionTabActive: { backgroundColor: C.accentSoft, borderColor: C.accent },
+  flagChipActive: { backgroundColor: C.accentSoft, borderColor: C.accent },
+  aiMessage: {
+    backgroundColor: C.accentSoft, borderRadius: R.md,
+    padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: C.accent + '44',
+  },
+  qualityRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   primaryBtn: {
-    backgroundColor: C.ink,
-    borderRadius: R.md,
-    paddingVertical: 14,
-    alignItems: 'center',
+    backgroundColor: C.ink, borderRadius: R.md,
+    paddingVertical: 14, alignItems: 'center',
   },
 });

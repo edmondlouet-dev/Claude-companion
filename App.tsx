@@ -23,12 +23,14 @@ import { TabBar } from './src/components/TabBar';
 import { Login } from './src/screens/Login';
 import { SignUp } from './src/screens/SignUp';
 import { Questionnaire } from './src/screens/Questionnaire';
+import { Pitch } from './src/screens/Pitch';
 import { Today } from './src/screens/Today';
 import { Scan } from './src/screens/Scan';
 import { Proportions } from './src/screens/Proportions';
 import { Rituals } from './src/screens/Rituals';
 import { You } from './src/screens/You';
 import { Products } from './src/screens/Products';
+import { Settings } from './src/screens/Settings';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -36,9 +38,10 @@ type TabKey = 'today' | 'scan' | 'proportions' | 'rituals' | 'you';
 type AuthScreen = 'login' | 'signup';
 
 const MainApp: React.FC = () => {
-  const { authed, questionnaireComplete, setMode } = useStore();
+  const { authed, pitchSeen, questionnaireComplete, setPitchSeen, setMode } = useStore();
   const [activeTab, setActiveTab] = useState<TabKey>('today');
   const [showProducts, setShowProducts] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
 
   const handleTabChange = (tab: TabKey) => {
@@ -46,12 +49,17 @@ const MainApp: React.FC = () => {
     setMode(tab === 'proportions' ? 'lookmax' : 'normal');
   };
 
-  // Step 1: Onboarding questionnaire
+  // Step 1: Business pitch (shown once on first install)
+  if (!pitchSeen) {
+    return <Pitch onContinue={setPitchSeen} />;
+  }
+
+  // Step 2: Onboarding questionnaire
   if (!questionnaireComplete) {
     return <Questionnaire />;
   }
 
-  // Step 2: Auth
+  // Step 3: Auth
   if (!authed) {
     if (authScreen === 'signup') {
       return <SignUp onBack={() => setAuthScreen('login')} />;
@@ -59,12 +67,17 @@ const MainApp: React.FC = () => {
     return <Login onSignUp={() => setAuthScreen('signup')} />;
   }
 
-  // Step 3: Products overlay
+  // Step 4: Settings overlay
+  if (showSettings) {
+    return <Settings onBack={() => setShowSettings(false)} />;
+  }
+
+  // Step 5: Products overlay
   if (showProducts) {
     return <Products onBack={() => setShowProducts(false)} />;
   }
 
-  // Step 4: Main tab interface
+  // Step 6: Main tab interface
   return (
     <View style={styles.app}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
@@ -74,7 +87,12 @@ const MainApp: React.FC = () => {
         {activeTab === 'scan'        && <Scan />}
         {activeTab === 'proportions' && <Proportions />}
         {activeTab === 'rituals'     && <Rituals />}
-        {activeTab === 'you'         && <You onProducts={() => setShowProducts(true)} />}
+        {activeTab === 'you'         && (
+          <You
+            onProducts={() => setShowProducts(true)}
+            onSettings={() => setShowSettings(true)}
+          />
+        )}
       </View>
 
       <View style={styles.tabBarContainer}>

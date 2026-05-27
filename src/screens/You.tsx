@@ -53,17 +53,18 @@ const ChevronRight = () => (
 
 const MENU_ITEMS = [
   { label: 'My products',    icon: '◈', screen: 'products' },
+  { label: 'Settings',       icon: '◐', screen: 'settings' },
   { label: 'Skin profile',   icon: '◉', screen: null },
-  { label: 'Notifications',  icon: '◌', screen: null },
-  { label: 'Privacy',        icon: '◐', screen: null },
+  { label: 'Privacy',        icon: '◌', screen: null },
   { label: 'About Poreless', icon: '◯', screen: null },
 ];
 
 interface Props {
   onProducts?: () => void;
+  onSettings?: () => void;
 }
 
-export const You: React.FC<Props> = ({ onProducts }) => {
+export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
   const insets = useSafeAreaInsets();
   const { user, streak, lastScores, logout } = useStore();
 
@@ -166,7 +167,10 @@ export const You: React.FC<Props> = ({ onProducts }) => {
             <TouchableOpacity
               key={item.label}
               style={[styles.menuRow, i < MENU_ITEMS.length-1 && styles.menuRowBorder]}
-              onPress={() => { if (item.screen === 'products') onProducts?.(); }}
+              onPress={() => {
+                if (item.screen === 'products') onProducts?.();
+                else if (item.screen === 'settings') onSettings?.();
+              }}
               activeOpacity={0.6}
             >
               <Text style={[T.body, { color: C.ink3, marginRight: 10 }]}>{item.icon}</Text>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions,
 } from 'react-native';
-import Svg, { Ellipse, Path, Line, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { MetricStrip } from '../components/MetricStrip';
@@ -20,36 +20,56 @@ const LM_METRICS = [
   { key: 'skin',    value: '7.8', label: 'Skin',    dot: 'good' as const },
 ];
 
-const FaceDiagram: React.FC<{ size: number }> = ({ size }) => {
-  const s = { fill: 'none', stroke: C.ink3, strokeWidth: 0.9, strokeLinecap: 'round' as const };
+/**
+ * Minimalist single-line face — inspired by the one-stroke art style in the
+ * reference image. Clean oval, one almond eye, subtle nose, simple lips.
+ */
+const MinimalistFace: React.FC<{ size: number }> = ({ size }) => {
+  const s = { fill: 'none', stroke: C.ink3, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  const thin  = { ...s, strokeWidth: 0.9 };
+  const thick = { ...s, strokeWidth: 1.0, stroke: C.ink2 };
   return (
     <Svg width={size} height={size} viewBox="0 0 200 230">
-      <Ellipse cx={100} cy={115} rx={58} ry={78} {...s} />
-      <Path d="M 55 65 Q 100 40 145 65" {...s} />
-      <Path d="M 68 88 Q 80 83 93 88" {...s} />
-      <Path d="M 107 88 Q 120 83 132 88" {...s} />
-      <Ellipse cx={82} cy={100} rx={14} ry={7} {...s} />
-      <Ellipse cx={118} cy={100} rx={14} ry={7} {...s} />
-      <Circle cx={82} cy={100} r={3} fill={C.ink4} />
-      <Circle cx={118} cy={100} r={3} fill={C.ink4} />
-      <Path d="M 96 100 L 92 128 Q 100 132 108 128 L 104 100" {...s} />
-      <Path d="M 88 128 Q 92 134 100 132 Q 108 134 112 128" {...s} />
-      <Path d="M 85 152 Q 100 148 115 152" {...s} />
-      <Path d="M 85 152 Q 100 162 115 152" {...s} />
-      <Path d="M 85 152 Q 100 157 115 152" {...s} strokeDasharray="2 2" />
-      <Path d="M 80 175 Q 100 188 120 175" {...s} />
-      {[
-        [100, 37],
-        [82, 100],
-        [118, 100],
-        [100, 132],
-        [100, 157],
-        [100, 188],
-      ].map(([x, y], i) => (
-        <Circle key={i} cx={x} cy={y} r={2} fill={C.accentSoft} stroke={C.accent} strokeWidth={0.8} />
+      {/* ── Face outline — clean oval ────────────────────────────────────── */}
+      <Path
+        d="M 100 26
+           C 66 26 42 58 42 110
+           C 42 162 64 203 100 208
+           C 136 203 158 162 158 110
+           C 158 58 134 26 100 26 Z"
+        {...thick}
+      />
+
+      {/* ── One eye (right, almond) — two arcs meeting at corners ────────── */}
+      <Path d="M 70 96 C 77 87 96 87 103 96" {...thin} />
+      <Path d="M 70 96 C 77 103 96 103 103 96" {...thin} />
+      {/* pupil dot */}
+      <Circle cx={86} cy={96} r={2.8} fill={C.ink3} />
+
+      {/* ── Nose — minimal bridge line ──────────────────────────────────── */}
+      <Path d="M 99 112 C 97 126 95 134 97 140 C 101 145 104 145 107 140" {...thin} />
+
+      {/* ── Lips — upper bow + lower arc ────────────────────────────────── */}
+      {/* upper lip philtrum bow */}
+      <Path d="M 80 161 Q 90 155 100 158 Q 110 155 120 161" {...thin} />
+      {/* lower lip */}
+      <Path d="M 80 161 Q 100 170 120 161" {...thin} />
+
+      {/* ── Golden-ratio overlay lines (faint) ──────────────────────────── */}
+      {/* vertical centre */}
+      <Line x1={100} y1={30} x2={100} y2={205}
+        stroke={C.accent} strokeOpacity={0.18} strokeWidth={0.5} strokeDasharray="3 5" />
+      {/* horizontal eye line */}
+      <Line x1={45} y1={96} x2={155} y2={96}
+        stroke={C.accent} strokeOpacity={0.18} strokeWidth={0.5} strokeDasharray="3 5" />
+      {/* third-line */}
+      <Line x1={45} y1={158} x2={155} y2={158}
+        stroke={C.accent} strokeOpacity={0.14} strokeWidth={0.5} strokeDasharray="3 5" />
+
+      {/* ── Landmark accent dots ─────────────────────────────────────────── */}
+      {[[100, 26], [86, 96], [100, 140], [100, 160], [100, 207]].map(([x, y], i) => (
+        <Circle key={i} cx={x} cy={y} r={2} fill={C.accentSoft} stroke={C.accent} strokeWidth={0.7} />
       ))}
-      <Line x1={68} y1={96} x2={132} y2={104} stroke={C.accent} strokeOpacity={0.4} strokeWidth={0.7} strokeDasharray="3 3" />
-      <Line x1={100} y1={65} x2={100} y2={185} stroke={C.ink4} strokeOpacity={0.5} strokeWidth={0.5} strokeDasharray="2 4" />
     </Svg>
   );
 };
@@ -63,10 +83,7 @@ export const Proportions: React.FC = () => {
       <Background mode="lookmax" />
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingTop: insets.top + 8, paddingBottom: 100 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8, paddingBottom: 100 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
@@ -91,9 +108,10 @@ export const Proportions: React.FC = () => {
           <MetricStrip metrics={LM_METRICS} active={active} onPick={setActive} />
         </View>
 
+        {/* Face diagram — minimalist line art */}
         <FlutedGlass padding={16} mode="lookmax" style={{ marginBottom: 14 }}>
           <View style={styles.diagramWrap}>
-            <FaceDiagram size={DIAGRAM_SIZE} />
+            <MinimalistFace size={DIAGRAM_SIZE} />
           </View>
         </FlutedGlass>
 
@@ -107,32 +125,24 @@ export const Proportions: React.FC = () => {
           {
             title: 'Canthal Tilt: +2.3°',
             body: 'Positive canthal tilt correlates with perceived attractiveness. Yours is mild positive — in the ideal range.',
-            tag: 'Good',
-            tagVariant: 'sage',
+            tag: 'Good', tagVariant: 'sage',
           },
           {
             title: 'Jaw Width: Moderate',
             body: 'A broader jaw-to-cheekbone ratio can be enhanced through facial exercises and lower body-fat levels.',
-            tag: 'Moderate',
-            tagVariant: 'warn',
+            tag: 'Moderate', tagVariant: 'warn',
           },
           {
             title: 'Midface Ratio: 1:1.1',
             body: 'Midface length is well-proportioned. Mewing and proper tongue posture help maintain this long-term.',
-            tag: 'Good',
-            tagVariant: 'sage',
+            tag: 'Good', tagVariant: 'sage',
           },
         ].map((ins, i) => (
           <FlutedGlass key={i} padding={12} mode="lookmax" style={{ marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Text style={[T.body, { fontWeight: '600', fontSize: 13, flex: 1 }]}>{ins.title}</Text>
-              <View style={[
-                styles.insightTag,
-                { backgroundColor: ins.tagVariant === 'sage' ? C.sageSoft : '#FEF3E2' },
-              ]}>
-                <Text style={[T.pill, { color: ins.tagVariant === 'sage' ? C.sage : C.warn }]}>
-                  {ins.tag}
-                </Text>
+              <View style={[styles.insightTag, { backgroundColor: ins.tagVariant === 'sage' ? C.sageSoft : '#FEF3E2' }]}>
+                <Text style={[T.pill, { color: ins.tagVariant === 'sage' ? C.sage : C.warn }]}>{ins.tag}</Text>
               </View>
             </View>
             <Text style={[T.bodySm, { color: C.ink3, marginTop: 6, lineHeight: 17 }]}>{ins.body}</Text>
@@ -146,35 +156,10 @@ export const Proportions: React.FC = () => {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingHorizontal: S.gutter },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  settingsBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  diagramWrap: {
-    alignItems: 'center',
-    backgroundColor: '#FAF8F3',
-    borderRadius: R.md,
-    paddingVertical: 12,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  insightTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: R.pill,
-    marginLeft: 8,
-  },
+  settingsBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  diagramWrap: { alignItems: 'center', backgroundColor: '#FAF8F3', borderRadius: R.md, paddingVertical: 12 },
+  footer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  insightTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.pill, marginLeft: 8 },
 });
