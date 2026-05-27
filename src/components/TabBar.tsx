@@ -37,21 +37,55 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'you',         label: 'YOU' },
 ];
 
+// Cohesive premium line-art set — uniform 1.6/1.9 stroke, rounded joins,
+// consistent 24px optical grid to match the app's delicate line aesthetic.
 const TabIcon: React.FC<{ name: TabKey; active: boolean }> = ({ name, active }) => {
   const stroke = active ? C.ink : C.ink3;
-  const sw = active ? 2 : 1.5;
+  const sw = active ? 1.9 : 1.6;
   const s = { fill: 'none', stroke, strokeWidth: sw, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   switch (name) {
     case 'today':
-      return <Svg width={22} height={22} viewBox="0 0 24 24"><Path d="M3 12l9-8 9 8M5 10v9a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1v-9" {...s}/></Svg>;
+      // Sun / day — radiant ritual marker
+      return (
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={4.5} {...s} />
+          <Path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2L5.6 5.6" {...s} />
+        </Svg>
+      );
     case 'scan':
-      return <Svg width={22} height={22} viewBox="0 0 24 24"><Path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" {...s}/><Circle cx={12} cy={12} r={4} {...s}/></Svg>;
+      // Focus reticle framing a soft face arc
+      return (
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Path d="M3 8V6a2.5 2.5 0 0 1 2.5-2.5H7M17 3.5h1.5A2.5 2.5 0 0 1 21 6v2M21 16v2a2.5 2.5 0 0 1-2.5 2.5H17M7 20.5H5.5A2.5 2.5 0 0 1 3 18v-2" {...s} />
+          <Path d="M9 14.5a3.2 3.2 0 0 0 6 0" {...s} />
+          <Circle cx={9.3} cy={10} r={0.5} fill={stroke} stroke="none" />
+          <Circle cx={14.7} cy={10} r={0.5} fill={stroke} stroke="none" />
+        </Svg>
+      );
     case 'proportions':
-      return <Svg width={22} height={22} viewBox="0 0 24 24"><Path d="M12 3l1.5 4 4 1.5-4 1.5L12 14l-1.5-4-4-1.5 4-1.5z" {...s}/><Path d="M5 18l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" {...s}/></Svg>;
+      // Twin sparkle / facets — refined structure
+      return (
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8L5.5 10l4.8-1.7z" {...s} />
+          <Path d="M18.5 16l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" {...s} />
+        </Svg>
+      );
     case 'rituals':
-      return <Svg width={22} height={22} viewBox="0 0 24 24"><Path d="M12 3c0 4-4 5-4 9a4 4 0 0 0 8 0c0-2-1-3-2-4 0 2-1 3-2 3 0-3 0-5 0-8z" {...s}/><Path d="M8 21h8M12 17v4" {...s}/></Svg>;
+      // Candle flame — ceremony
+      return (
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Path d="M12 3c0 4-4 5-4 8.5A4 4 0 0 0 16 11.5c0-2-1-3-2-4 0 2-1 3-2 3 0-3 0-4.5 0-7.5z" {...s} />
+          <Path d="M8.5 20.5h7M12 17v3.5" {...s} />
+        </Svg>
+      );
     case 'you':
-      return <Svg width={22} height={22} viewBox="0 0 24 24"><Circle cx={12} cy={8} r={4} {...s}/><Path d="M4 21a8 8 0 0 1 16 0" {...s}/></Svg>;
+      // Profile
+      return (
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Circle cx={12} cy={8.5} r={3.8} {...s} />
+          <Path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" {...s} />
+        </Svg>
+      );
   }
 };
 
