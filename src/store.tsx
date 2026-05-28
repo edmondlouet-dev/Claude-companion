@@ -2,6 +2,10 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSession, signOut as authSignOut } from './services/auth';
 import type { UserProfile } from './services/auth';
+import {
+  DEFAULT_STRUCTURAL, DEFAULT_SHELF,
+  type StructuralMetrics, type ShelfItem,
+} from './skin';
 
 type AppMode = 'normal' | 'lookmax';
 
@@ -22,6 +26,8 @@ interface StoreState {
   mode: AppMode;
   activeRitual: string | null;
   temperatureUnit: 'C' | 'F';
+  structural: StructuralMetrics;
+  shelf: ShelfItem[];
 }
 
 interface StoreActions {
@@ -61,6 +67,8 @@ const defaults: StoreState = {
   mode: 'normal',
   activeRitual: null,
   temperatureUnit: 'C',
+  structural: DEFAULT_STRUCTURAL,
+  shelf: DEFAULT_SHELF,
 };
 
 const StoreContext = createContext<StoreState & StoreActions>({} as StoreState & StoreActions);
