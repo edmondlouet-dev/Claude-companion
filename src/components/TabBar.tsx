@@ -1,34 +1,37 @@
 /**
- * Liquid-glass bottom tab bar — redesigned icon set for Poreless:
+ * Liquid-glass bottom tab bar — Lucide editorial icon set:
  *
- * TODAY       — sun with rays (morning ritual)
- * SCAN        — face with horizontal scan lines (AI analysis)
- * PROPORTIONS — Fibonacci / golden spiral (sacred geometry)
- * RITUALS     — candle with teardrop flame (ceremony)
- * YOU         — oval hand mirror (personal beauty)
+ * TODAY       — Sparkles
+ * SCAN        — Maximize
+ * PROPORTIONS — Activity
+ * RITUALS     — Bookmark
+ * YOU         — User
  *
- * Active tab: warm glow ring + brightened icon + heavier stroke.
- * Slow light-sweep shimmer every ~11s — "modern Greek" lens feel.
+ * Uniform ultra-thin profile: strokeWidth 1.2, size 24.
+ * Active #2A2522 · inactive #A09B95.
  */
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, useWindowDimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import Svg, {
-  Path, Circle, Line, Ellipse,
-  Defs, Pattern, Rect,
-} from 'react-native-svg';
-import { C, T, R } from '../tokens';
+import Svg, { Defs, Pattern, Rect } from 'react-native-svg';
+import { Sparkles, Maximize, Activity, Bookmark, User } from 'lucide-react-native';
+import { C, T } from '../tokens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type TabKey = 'today' | 'scan' | 'proportions' | 'rituals' | 'you';
+
+const NAV_ACTIVE   = '#2A2522';
+const NAV_INACTIVE = '#A09B95';
 
 interface Props {
   active: TabKey;
   onChange: (tab: TabKey) => void;
   mode?: 'normal' | 'lookmax';
 }
+
+const ICONS = { today: Sparkles, scan: Maximize, proportions: Activity, rituals: Bookmark, you: User } as const;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'today',       label: 'TODAY' },
@@ -39,90 +42,8 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 const TabIcon: React.FC<{ name: TabKey; active: boolean }> = ({ name, active }) => {
-  const stroke = active ? C.ink : C.ink3;
-  const sw = active ? 1.9 : 1.55;
-  const s = {
-    fill: 'none', stroke, strokeWidth: sw,
-    strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
-  };
-
-  switch (name) {
-    // ── TODAY: sun (circle + 8 short rays) ──────────────────────────────────
-    case 'today':
-      return (
-        <Svg width={22} height={22} viewBox="0 0 24 24">
-          <Circle cx={12} cy={12} r={4} {...s} />
-          <Line x1={12} y1={2.5} x2={12} y2={5}   {...s} />
-          <Line x1={12} y1={19} x2={12} y2={21.5} {...s} />
-          <Line x1={2.5} y1={12} x2={5}   y2={12} {...s} />
-          <Line x1={19}  y1={12} x2={21.5} y2={12} {...s} />
-          <Line x1={5.6} y1={5.6}  x2={7.4} y2={7.4}   {...s} />
-          <Line x1={16.6} y1={16.6} x2={18.4} y2={18.4} {...s} />
-          <Line x1={18.4} y1={5.6}  x2={16.6} y2={7.4}  {...s} />
-          <Line x1={7.4}  y1={16.6} x2={5.6}  y2={18.4} {...s} />
-        </Svg>
-      );
-
-    // ── SCAN: face outline with 3 horizontal scan lines crossing it ─────────
-    case 'scan':
-      return (
-        <Svg width={22} height={22} viewBox="0 0 24 24">
-          {/* face oval */}
-          <Path d="M 12 4 C 7 4 5 7.5 5 12 C 5 17 7.5 21 12 21 C 16.5 21 19 17 19 12 C 19 7.5 17 4 12 4 Z" {...s} />
-          {/* scan lines clipped to face width */}
-          <Line x1={6.2} y1={10} x2={17.8} y2={10} {...s} strokeOpacity={0.55} strokeDasharray="1.5 1" />
-          <Line x1={5.2} y1={13} x2={18.8} y2={13} {...s} strokeOpacity={0.85} />
-          <Line x1={6.5} y1={16} x2={17.5} y2={16} {...s} strokeOpacity={0.55} strokeDasharray="1.5 1" />
-        </Svg>
-      );
-
-    // ── PROPORTIONS: Fibonacci / golden spiral (logarithmic) ────────────────
-    //    Points computed from r = φ^(2θ/π), scale=1.8, center=(8,9)
-    case 'proportions':
-      return (
-        <Svg width={22} height={22} viewBox="0 0 24 24">
-          <Path
-            d="M 9.8 9.0 L 9.9 8.2 L 9.6 7.4 L 9.0 6.6 L 8.0 6.1
-               L 6.7 6.0 L 5.4 6.4 L 4.1 7.4 L 3.3 9.0 L 3.1 11.0
-               L 3.8 13.2 L 5.4 15.3 L 8.0 16.6 L 11.3 17.0
-               L 14.9 15.9 L 18.1 13.2 L 20.3 9.0"
-            fill="none"
-            stroke={stroke}
-            strokeWidth={sw}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </Svg>
-      );
-
-    // ── RITUALS: candle with teardrop flame ──────────────────────────────────
-    case 'rituals':
-      return (
-        <Svg width={22} height={22} viewBox="0 0 24 24">
-          {/* candle body */}
-          <Path d="M 10 21 L 14 21 L 13.2 12 L 10.8 12 Z" {...s} />
-          {/* wick */}
-          <Line x1={12} y1={12} x2={12} y2={10} {...s} />
-          {/* teardrop flame */}
-          <Path d="M 12 10 C 12 8.5 14.5 7 13 4.5 C 11.5 6 9.5 7 9.5 9 C 9.5 10.5 10.6 11.5 12 11.5 C 13.4 11.5 14.5 10.5 14.5 9" {...s} />
-          {/* base plate */}
-          <Line x1={8} y1={21} x2={16} y2={21} {...s} />
-        </Svg>
-      );
-
-    // ── YOU: oval hand mirror ────────────────────────────────────────────────
-    case 'you':
-      return (
-        <Svg width={22} height={22} viewBox="0 0 24 24">
-          {/* mirror oval */}
-          <Ellipse cx={12} cy={9} rx={5.5} ry={6.5} {...s} />
-          {/* handle */}
-          <Path d="M 10.5 15.2 L 9.5 20" {...s} />
-          <Path d="M 13.5 15.2 L 14.5 20" {...s} />
-          <Path d="M 9.5 20 L 14.5 20" {...s} />
-        </Svg>
-      );
-  }
+  const Icon = ICONS[name];
+  return <Icon size={24} strokeWidth={1.2} color={active ? NAV_ACTIVE : NAV_INACTIVE} />;
 };
 
 export const TabBar: React.FC<Props> = ({ active, onChange, mode = 'normal' }) => {
@@ -181,7 +102,7 @@ export const TabBar: React.FC<Props> = ({ active, onChange, mode = 'normal' }) =
             <Text style={[
               T.tabLabel, {
                 fontSize: 9,
-                color: isActive ? C.ink : C.ink3,
+                color: isActive ? NAV_ACTIVE : NAV_INACTIVE,
                 marginTop: 2,
                 letterSpacing: tab.label.length > 6 ? 0.1 : 0.4,
               },

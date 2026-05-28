@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions,
 } from 'react-native';
-import Svg, { Path, Circle, Line, Ellipse } from 'react-native-svg';
+import { Waves, Sparkle, Plus, Flower, Leaf, Scale, Clock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FlutedGlass } from '../components/FlutedGlass';
@@ -17,115 +17,20 @@ import { C, R, T, S } from '../tokens';
 
 const { width: W } = Dimensions.get('window');
 
-const RitualIcon: React.FC<{ id: string; size?: number; color?: string }> = ({ id, size = 30, color = C.ink3 }) => {
-  const s = { fill: 'none', stroke: color, strokeWidth: 1.4, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  switch (id) {
-    case 'japanese': // Three water waves
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          <Path d="M4 9 Q8 6 12 9 Q16 12 20 9 Q24 6 28 9" {...s} />
-          <Path d="M4 16 Q8 13 12 16 Q16 19 20 16 Q24 13 28 16" {...s} />
-          <Path d="M4 23 Q8 20 12 23 Q16 26 20 23 Q24 20 28 23" {...s} />
-        </Svg>
-      );
-    case 'korean': // Snowflake asterisk
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          <Line x1={16} y1={4} x2={16} y2={28} {...s} />
-          <Line x1={4} y1={16} x2={28} y2={16} {...s} />
-          <Line x1={7.5} y1={7.5} x2={24.5} y2={24.5} {...s} />
-          <Line x1={24.5} y1={7.5} x2={7.5} y2={24.5} {...s} />
-          <Circle cx={16} cy={4} r={1.8} fill={color} />
-          <Circle cx={16} cy={28} r={1.8} fill={color} />
-          <Circle cx={4} cy={16} r={1.8} fill={color} />
-          <Circle cx={28} cy={16} r={1.8} fill={color} />
-        </Svg>
-      );
-    case 'french': // Caduceus — simplified staff + wings + snake cross
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          {/* staff */}
-          <Line x1={16} y1={6} x2={16} y2={28} {...s} />
-          {/* left wing */}
-          <Path d="M16 9 C12 6 6 7 7 11 C9 13 13 11 16 9" {...s} />
-          {/* right wing */}
-          <Path d="M16 9 C20 6 26 7 25 11 C23 13 19 11 16 9" {...s} />
-          {/* snake left */}
-          <Path d="M14 13 C10 15 10 19 14 21 C18 23 18 26 14 28" {...s} />
-          {/* snake right */}
-          <Path d="M18 13 C22 15 22 19 18 21 C14 23 14 26 18 28" {...s} />
-        </Svg>
-      );
-    case 'ayurvedic': // Lotus flower
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          {/* center petal */}
-          <Path d="M16 26 C14 20 14 14 16 8 C18 14 18 20 16 26" {...s} />
-          {/* left petals */}
-          <Path d="M16 24 C12 20 6 20 5 14 C9 12 14 18 16 24" {...s} />
-          <Path d="M16 24 C10 22 6 18 6 12 C10 11 15 17 16 24" {...s} />
-          {/* right petals */}
-          <Path d="M16 24 C20 20 26 20 27 14 C23 12 18 18 16 24" {...s} />
-          <Path d="M16 24 C22 22 26 18 26 12 C22 11 17 17 16 24" {...s} />
-          {/* base */}
-          <Path d="M10 27 Q16 29 22 27" {...s} />
-        </Svg>
-      );
-    case 'african': // Tropical leaf with veins
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          {/* leaf outline */}
-          <Path d="M16 28 C7 22 5 12 14 5 C22 8 27 20 16 28" {...s} />
-          {/* center vein */}
-          <Line x1={16} y1={28} x2={15} y2={7} {...s} />
-          {/* side veins */}
-          <Line x1={15} y1={22} x2={9} y2={17} {...s} />
-          <Line x1={15} y1={17} x2={9} y2={13} {...s} />
-          <Line x1={15} y1={22} x2={21} y2={18} {...s} />
-          <Line x1={15} y1={17} x2={21} y2={14} {...s} />
-        </Svg>
-      );
-    case 'scandinavian': // Balance scales
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          {/* beam */}
-          <Line x1={5} y1={10} x2={27} y2={10} {...s} />
-          {/* post */}
-          <Line x1={16} y1={10} x2={16} y2={26} {...s} />
-          {/* base */}
-          <Line x1={10} y1={26} x2={22} y2={26} {...s} />
-          {/* left pan hanging cords */}
-          <Line x1={7} y1={10} x2={6} y2={17} {...s} />
-          <Line x1={12} y1={10} x2={13} y2={17} {...s} />
-          {/* left pan arc */}
-          <Path d="M6 17 Q9.5 21 13 17" {...s} />
-          {/* right pan hanging cords */}
-          <Line x1={20} y1={10} x2={19} y2={17} {...s} />
-          <Line x1={25} y1={10} x2={26} y2={17} {...s} />
-          {/* right pan arc */}
-          <Path d="M19 17 Q22.5 21 26 17" {...s} />
-        </Svg>
-      );
-    case 'greek': // Clock face
-      return (
-        <Svg width={size} height={size} viewBox="0 0 32 32">
-          <Circle cx={16} cy={16} r={12} {...s} />
-          {/* tick marks */}
-          <Line x1={16} y1={5} x2={16} y2={8} {...s} />
-          <Line x1={27} y1={16} x2={24} y2={16} {...s} />
-          <Line x1={16} y1={27} x2={16} y2={24} {...s} />
-          <Line x1={5} y1={16} x2={8} y2={16} {...s} />
-          {/* hour hand */}
-          <Line x1={16} y1={16} x2={16} y2={10} {...s} strokeWidth={1.8} />
-          {/* minute hand */}
-          <Line x1={16} y1={16} x2={22} y2={16} {...s} strokeWidth={1.4} />
-          {/* centre dot */}
-          <Circle cx={16} cy={16} r={1.5} fill={color} />
-        </Svg>
-      );
-    default:
-      return null;
-  }
+const RITUAL_ICONS = {
+  japanese: Waves,
+  korean: Sparkle,
+  french: Plus,
+  ayurvedic: Flower,
+  african: Leaf,
+  scandinavian: Scale,
+  greek: Clock,
+} as const;
+
+const RitualIcon: React.FC<{ id: string; size?: number; color?: string }> = ({ id, size = 24, color = '#A09B95' }) => {
+  const Icon = RITUAL_ICONS[id as keyof typeof RITUAL_ICONS];
+  if (!Icon) return null;
+  return <Icon size={size} strokeWidth={1.2} color={color} />;
 };
 
 interface Ritual {
@@ -281,7 +186,7 @@ export const Rituals: React.FC = () => {
             <View style={{ flex: 1 }}>
               <Text style={[T.kicker, { color: C.accent, marginBottom: 4 }]}>AI RECOMMENDS FOR YOU</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                <RitualIcon id={aiPick} size={20} color={C.accent} />
+                <RitualIcon id={aiPick} size={24} color="#2A2522" />
                 <Text style={[T.body, { fontWeight: '600', color: C.ink }]}>
                   {RITUALS.find(r => r.key === aiPick)?.culture} — {RITUALS.find(r => r.key === aiPick)?.name}
                 </Text>
@@ -319,7 +224,7 @@ export const Rituals: React.FC = () => {
               >
                 <View style={styles.cardHead}>
                   <View style={styles.iconWrap}>
-                    <RitualIcon id={r.key} size={26} color={isActive ? C.accent : C.ink3} />
+                    <RitualIcon id={r.key} size={24} color={isActive ? '#2A2522' : '#A09B95'} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
