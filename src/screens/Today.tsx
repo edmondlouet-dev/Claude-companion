@@ -11,6 +11,7 @@ import { RoutineRow } from '../components/RoutineRow';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { useStore } from '../store';
 import { buildRoutine, routineGaps, STEP_LABEL, type ProductCategory } from '../products';
+import { getRitual, adaptRoutineForRitual } from '../rituals';
 import { C, R, T, S } from '../tokens';
 
 const METRICS = [
@@ -64,6 +65,9 @@ export const Today: React.FC = () => {
 
   const routine = buildRoutine(owned, 'AM');
   const gaps    = routineGaps(owned);
+
+  const ritual   = activeRitual ? getRitual(activeRitual) : undefined;
+  const tomorrow = activeRitual ? adaptRoutineForRitual(activeRitual, owned) : [];
 
   const today  = new Date();
   const days   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
@@ -136,10 +140,10 @@ export const Today: React.FC = () => {
         </FlutedGlass>
 
         {/* Active ritual banner */}
-        {activeRitual && (
+        {ritual && (
           <FlutedGlass padding={10} style={{ marginBottom: 14, borderColor: C.accent }}>
             <Text style={[T.kicker, { color: C.accent }]}>
-              ✦ ACTIVE RITUAL · {activeRitual.toUpperCase()} METHOD · DAY 1 OF 7
+              ✦ ACTIVE RITUAL · {ritual.culture.toUpperCase()} · {ritual.name} · DAY 1 OF 7
             </Text>
           </FlutedGlass>
         )}
@@ -184,6 +188,35 @@ export const Today: React.FC = () => {
             why={WHY[step.category]}
           />
         ))}
+
+        {/* TOMORROW — reshaped by the active ritual */}
+        {ritual && tomorrow.length > 0 && (
+          <>
+            <View style={[styles.sectionHeader, { marginTop: 18 }]}>
+              <Text style={[T.kicker, { flex: 1, color: C.accent }]}>
+                TOMORROW · {ritual.culture.toUpperCase()} METHOD
+              </Text>
+              <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{tomorrow.length} steps</Text>
+            </View>
+            <Text style={[T.bodySm, { color: C.ink3, marginBottom: 10, lineHeight: 17 }]}>
+              Your <Text style={{ fontStyle: 'italic', color: C.accentInk }}>{ritual.name}</Text> ritual
+              reshapes tomorrow's routine — steps follow the tradition, matched to what's on your shelf.
+            </Text>
+            {tomorrow.map((t, i) => (
+              <FlutedGlass key={`${t.step}-${i}`} padding={12} style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                  <Text style={[T.num, { fontSize: 11, color: C.accent, width: 22 }]}>
+                    {String(i + 1).padStart(2, '0')}
+                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[T.body, { fontWeight: '600', fontSize: 13 }]}>{t.step}</Text>
+                    <Text style={[T.bodySm, { color: C.ink3, marginTop: 2 }]}>{t.product}</Text>
+                  </View>
+                </View>
+              </FlutedGlass>
+            ))}
+          </>
+        )}
 
         {/* Gaps — with Browse links */}
         {gaps.length > 0 && (

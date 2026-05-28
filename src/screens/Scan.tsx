@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Flame, Droplet, CircleDot, Zap, Droplets } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
@@ -19,12 +20,12 @@ type Step = 'preview' | 'scanning' | 'done';
 type SkinConcern = 'Redness' | 'Dryness' | 'Breakout' | 'Irritation' | 'Oiliness';
 const ALL_CONCERNS: SkinConcern[] = ['Redness', 'Dryness', 'Breakout', 'Irritation', 'Oiliness'];
 
-const CONCERN_ICON: Record<SkinConcern, string> = {
-  Redness: '🔴',
-  Dryness: '💧',
-  Breakout: '⚠️',
-  Irritation: '🌡️',
-  Oiliness: '✨',
+const CONCERN_ICON: Record<SkinConcern, typeof Flame> = {
+  Redness: Flame,
+  Dryness: Droplet,
+  Breakout: CircleDot,
+  Irritation: Zap,
+  Oiliness: Droplets,
 };
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -148,6 +149,7 @@ export const Scan: React.FC = () => {
           <View style={styles.flagRow}>
             {ALL_CONCERNS.map(c => {
               const active = flagged.has(c);
+              const Icon = CONCERN_ICON[c];
               return (
                 <TouchableOpacity
                   key={c}
@@ -155,7 +157,7 @@ export const Scan: React.FC = () => {
                   onPress={() => toggleFlag(c)}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 13 }}>{CONCERN_ICON[c]}</Text>
+                  <Icon size={16} strokeWidth={1.2} color={active ? C.accentInk : C.ink3} />
                   <Text style={[T.kicker, {
                     color: active ? C.accentInk : C.ink3,
                     fontSize: 9, letterSpacing: 0.4,

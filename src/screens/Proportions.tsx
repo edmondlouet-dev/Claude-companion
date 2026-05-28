@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions,
 } from 'react-native';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { MetricStrip } from '../components/MetricStrip';
 import { FlutedGlass } from '../components/FlutedGlass';
+import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
 
 const { width: W } = Dimensions.get('window');
@@ -15,49 +16,90 @@ const DIAGRAM_SIZE = Math.min(W - S.gutter * 2, 280);
 const LM_METRICS = [
   { key: 'overall', value: '7.4', label: 'Overall', dot: 'good' as const },
   { key: 'jaw',     value: '6.8', label: 'Jaw',     dot: 'good' as const },
-  { key: 'canthal', value: '8.1', label: 'Canthal', dot: 'good' as const },
-  { key: 'midface', value: '7.2', label: 'Midface', dot: 'good' as const },
+  { key: 'canthal', value: '6.4', label: 'Canthal', dot: 'warn' as const },
+  { key: 'midface', value: '6.9', label: 'Midface', dot: 'warn' as const },
   { key: 'skin',    value: '7.8', label: 'Skin',    dot: 'good' as const },
 ];
 
 /**
- * One-line art face matching the reference image:
- * floating eyebrow arches, almond eye with pupil, long flowing nose, nostril, lips.
- * No face oval — features float in space.
+ * Single-line abstract face (à la the reference line art): the features sit in
+ * a 3/4 read — brows arch upper-right, one almond eye is offset to the right,
+ * and a long nose flows down the centre-left into a small curl before the lips.
+ * Deliberately asymmetric so it never reads as a centred "cyclops" eye.
  */
 const MinimalistFace: React.FC<{ size: number }> = ({ size }) => {
   const s = { fill: 'none', stroke: C.ink2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   return (
     <Svg width={size} height={size * 1.25} viewBox="0 0 200 250">
-      {/* ── Eyebrow — two arching curves ────────────────────────────────── */}
-      <Path d="M 44 56 C 80 36 138 38 168 54" {...s} strokeWidth={1.4} />
-      <Path d="M 48 66 C 82 50 136 50 164 64" {...s} strokeWidth={0.9} />
+      {/* ── Brows — main arch above the eye + a softer lower-left brow ─── */}
+      <Path d="M 92 58 C 120 42 158 44 182 60" {...s} strokeWidth={1.4} />
+      <Path d="M 30 80 C 50 70 78 70 96 76" {...s} strokeWidth={1} />
 
-      {/* ── Eye — almond shape (two arcs meeting at corners) ──────────── */}
-      <Path d="M 56 92 C 82 70 138 70 158 88" {...s} strokeWidth={1.5} />
-      <Path d="M 56 92 C 82 110 138 110 158 88" {...s} strokeWidth={1.5} />
+      {/* ── Eye — almond, offset to the right ─────────────────────────── */}
+      <Path d="M 104 96 C 128 80 162 80 184 96" {...s} strokeWidth={1.5} />
+      <Path d="M 104 96 C 128 108 162 108 184 96" {...s} strokeWidth={1.5} />
       {/* iris ring */}
-      <Circle cx={107} cy={90} r={12} {...s} strokeWidth={1.2} />
+      <Circle cx={144} cy={95} r={11} {...s} strokeWidth={1.2} />
       {/* pupil */}
-      <Circle cx={107} cy={90} r={4.5} fill={C.ink2} />
+      <Circle cx={144} cy={95} r={4} fill={C.ink2} />
 
-      {/* ── Nose — long flowing curve from inner eye downward ─────────── */}
-      <Path d="M 102 112 C 98 130 94 152 92 170 C 90 184 94 194 103 200" {...s} strokeWidth={1.3} />
-
-      {/* ── Nostril — small circle at nose base ───────────────────────── */}
-      <Circle cx={103} cy={202} r={5} {...s} strokeWidth={1.1} />
+      {/* ── Nose — long flowing line from the left brow into a curl ───── */}
+      <Path
+        d="M 92 76 C 84 110 76 145 76 168 C 76 182 90 190 98 180 C 103 173 96 167 86 172"
+        {...s}
+        strokeWidth={1.3}
+      />
 
       {/* ── Upper lip — cupid's bow ───────────────────────────────────── */}
-      <Path d="M 68 228 C 82 214 98 222 108 218 C 118 222 134 214 148 228" {...s} strokeWidth={1.5} />
+      <Path d="M 78 216 C 94 204 106 211 114 207 C 122 211 134 204 150 216" {...s} strokeWidth={1.5} />
       {/* ── Lower lip — full arc ──────────────────────────────────────── */}
-      <Path d="M 68 228 Q 108 246 148 228" {...s} strokeWidth={1.5} />
+      <Path d="M 78 216 Q 114 235 150 216" {...s} strokeWidth={1.5} />
     </Svg>
   );
 };
 
 export const Proportions: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const { structural } = useStore();
   const [active, setActive] = useState('overall');
+
+  const tiltLabel = structural.canthalTilt < 0 ? 'Slightly Downward'
+    : structural.canthalTilt > 0 ? 'Positive' : 'Neutral';
+
+  const insights = [
+    {
+      title: `Canthal Tilt: ${structural.canthalTilt}° (${tiltLabel})`,
+      body: structural.canthalTilt < 0
+        ? 'A slightly downward outer-eye corner softens the gaze. When applying eye serum, press up-and-out toward the brow tail to lift the appearance — never drag inward.'
+        : 'Positive canthal tilt correlates with a more alert, lifted eye area. Maintain with gentle upward eye-care movements.',
+      tag: structural.canthalTilt < 0 ? 'Watch' : 'Good',
+      tagVariant: structural.canthalTilt < 0 ? 'warn' : 'sage',
+    },
+    {
+      title: `Midface Ratio: ${structural.midfaceRatio.toFixed(2)}${structural.midfaceRatio > 1.08 ? ' (Mild Asymmetry)' : ''}`,
+      body: structural.midfaceRatio > 1.08
+        ? 'A ratio above 1.08 reads as mild asymmetry. Sculpt the fuller cheek upward toward the temple with fewer passes on the lighter side to even the structure over time.'
+        : 'Midface length is well-proportioned. Mewing and proper tongue posture help maintain this long-term.',
+      tag: structural.midfaceRatio > 1.08 ? 'Moderate' : 'Good',
+      tagVariant: structural.midfaceRatio > 1.08 ? 'warn' : 'sage',
+    },
+    {
+      title: `Fluid Retention: ${structural.fluidRetention}`,
+      body: structural.fluidRetention === 'Low'
+        ? 'Lymphatic flow is clear. A light morning drainage keeps the midface defined.'
+        : 'Trace lymph downward from the inner brow along the jaw to the collarbone — three slow passes per side before product — to de-puff and define.',
+      tag: structural.fluidRetention === 'Low' ? 'Good' : 'Moderate',
+      tagVariant: structural.fluidRetention === 'Low' ? 'sage' : 'warn',
+    },
+    {
+      title: `Barrier: ${structural.barrierStatus}`,
+      body: /sensiti|fatig/i.test(structural.barrierStatus)
+        ? 'Your barrier reads reactive. Favour gentle, fragrance-free formulas and press the final layer in with warm palms rather than rubbing to calm reactivity.'
+        : 'Barrier health is strong. Consistency compounds — protect it with daily SPF.',
+      tag: /sensiti|fatig/i.test(structural.barrierStatus) ? 'Watch' : 'Good',
+      tagVariant: /sensiti|fatig/i.test(structural.barrierStatus) ? 'warn' : 'sage',
+    },
+  ];
 
   return (
     <View style={styles.root}>
@@ -101,24 +143,8 @@ export const Proportions: React.FC = () => {
           <Text style={[T.kicker, { color: C.ink3 }]}>SCAN · 18H AGO</Text>
         </View>
 
-        <Text style={[T.kicker, { marginBottom: 8, marginTop: 8 }]}>INSIGHTS</Text>
-        {[
-          {
-            title: 'Canthal Tilt: +2.3°',
-            body: 'Positive canthal tilt correlates with perceived attractiveness. Yours is mild positive — in the ideal range.',
-            tag: 'Good', tagVariant: 'sage',
-          },
-          {
-            title: 'Jaw Width: Moderate',
-            body: 'A broader jaw-to-cheekbone ratio can be enhanced through facial exercises and lower body-fat levels.',
-            tag: 'Moderate', tagVariant: 'warn',
-          },
-          {
-            title: 'Midface Ratio: 1:1.1',
-            body: 'Midface length is well-proportioned. Mewing and proper tongue posture help maintain this long-term.',
-            tag: 'Good', tagVariant: 'sage',
-          },
-        ].map((ins, i) => (
+        <Text style={[T.kicker, { marginBottom: 8, marginTop: 8 }]}>INSIGHTS · FROM YOUR SCAN</Text>
+        {insights.map((ins, i) => (
           <FlutedGlass key={i} padding={12} mode="lookmax" style={{ marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Text style={[T.body, { fontWeight: '600', fontSize: 13, flex: 1 }]}>{ins.title}</Text>
