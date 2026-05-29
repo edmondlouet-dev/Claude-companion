@@ -1,9 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Animated, Dimensions,
+  Animated, Dimensions, LayoutAnimation, Platform, UIManager,
 } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
@@ -11,8 +11,82 @@ import { FlutedGlass } from '../components/FlutedGlass';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const { width: W } = Dimensions.get('window');
 const MAX_BAR_H = 80;
+
+// ── Per-metric deep dive: which region, what it means, what to do ──────────────
+type Zone = 'cheeks' | 'tzone' | 'undereye' | 'full' | 'jaw';
+interface ScoreDetail { zone: Zone; region: string; meaning: string; tip: string; }
+
+const SCORE_DETAIL: Record<string, ScoreDetail> = {
+  Hydration: {
+    zone: 'cheeks',
+    region: 'Cheeks & midface',
+    meaning: 'Measures surface moisture and how plump the stratum corneum reads. The cheeks lose water fastest, so they set this score.',
+    tip: 'Apply hyaluronic acid to damp skin within 60s of cleansing, then seal with moisturiser to lock it in.',
+  },
+  Texture: {
+    zone: 'full',
+    region: 'Forehead & cheeks',
+    meaning: 'Reads micro-roughness and evenness across the face — the smoothness of light reflecting off the surface.',
+    tip: 'A gentle chemical exfoliant (PHA/lactic) 2× weekly smooths texture without disrupting the barrier.',
+  },
+  Pores: {
+    zone: 'tzone',
+    region: 'Nose & inner cheeks (T-zone)',
+    meaning: 'Estimates visible pore size and congestion. Pores read largest where sebaceous glands cluster — around the nose.',
+    tip: 'Niacinamide and BHA keep pores clear; avoid heavy occlusives over the T-zone.',
+  },
+  Oil: {
+    zone: 'tzone',
+    region: 'Forehead, nose & chin',
+    meaning: 'Tracks sebum across the T-zone. A lower score means more shine and a higher risk of congestion.',
+    tip: 'Niacinamide regulates sebum by up to ~52% with consistent AM use. Don\'t over-strip — it rebounds oilier.',
+  },
+  Calm: {
+    zone: 'cheeks',
+    region: 'Cheeks & around the nose',
+    meaning: 'Inverse of redness — diffuse flushing and reactivity concentrate on the cheeks and nasal folds.',
+    tip: 'Fragrance-free, barrier-first formulas (ceramides, centella) keep this high. Patch-test new actives.',
+  },
+};
+
+// Compact face diagram with the relevant zone highlighted.
+const FaceZone: React.FC<{ zone: Zone }> = ({ zone }) => {
+  const hl = C.accent;
+  return (
+    <Svg width={56} height={68} viewBox="0 0 60 72">
+      {/* face outline */}
+      <Ellipse cx={30} cy={34} rx={20} ry={26} fill="none" stroke={C.ink4} strokeWidth={1.1} />
+      {/* zones */}
+      {zone === 'cheeks' && (
+        <>
+          <Ellipse cx={19} cy={40} rx={6} ry={8} fill={hl} opacity={0.22} />
+          <Ellipse cx={41} cy={40} rx={6} ry={8} fill={hl} opacity={0.22} />
+        </>
+      )}
+      {zone === 'tzone' && (
+        <Path d="M 22 16 L 38 16 L 35 30 L 33 46 L 27 46 L 25 30 Z" fill={hl} opacity={0.22} />
+      )}
+      {zone === 'undereye' && (
+        <>
+          <Path d="M 13 30 Q 19 36 25 30" fill="none" stroke={hl} strokeWidth={2.4} opacity={0.5} strokeLinecap="round" />
+          <Path d="M 35 30 Q 41 36 47 30" fill="none" stroke={hl} strokeWidth={2.4} opacity={0.5} strokeLinecap="round" />
+        </>
+      )}
+      {zone === 'jaw' && (
+        <Path d="M 12 44 Q 30 64 48 44" fill="none" stroke={hl} strokeWidth={3} opacity={0.45} strokeLinecap="round" />
+      )}
+      {zone === 'full' && (
+        <Ellipse cx={30} cy={34} rx={16} ry={22} fill={hl} opacity={0.14} />
+      )}
+    </Svg>
+  );
+};
 
 const DAYS_DATA = [
   { day: 'S', score: 71, isToday: false },
@@ -67,9 +141,17 @@ interface Props {
 export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
   const insets = useSafeAreaInsets();
   const { user, streak, lastScores, logout } = useStore();
+  const [openScore, setOpenScore] = useState<string | null>(null);
 
   const displayName = user?.name ?? 'Alex Chen';
   const isPremium   = user?.premium ?? false;
+
+  const toggleScore = (label: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(
+      220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity,
+    ));
+    setOpenScore(prev => (prev === label ? null : label));
+  };
 
   return (
     <View style={styles.root}>
@@ -131,8 +213,11 @@ export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
           </View>
         </FlutedGlass>
 
-        {/* Metric scores */}
-        <Text style={[T.kicker, { marginBottom: 8 }]}>LATEST SCORES</Text>
+        {/* Metric scores — tap a row to expand the deep dive */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={[T.kicker, { flex: 1 }]}>LATEST SCORES</Text>
+          <Text style={[T.kicker, { color: C.ink4, fontSize: 8 }]}>TAP FOR DETAIL</Text>
+        </View>
         <View style={{ gap: 6, marginBottom: 18 }}>
           {[
             { l: 'Hydration', v: lastScores?.hydration ?? 82 },
@@ -140,24 +225,55 @@ export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
             { l: 'Pores',     v: lastScores?.pores      ?? 69 },
             { l: 'Oil',       v: lastScores?.oil        ?? 55 },
             { l: 'Calm',      v: lastScores?.redness    ?? 88 },
-          ].map(m => (
-            <FlutedGlass key={m.l} padding={10}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={[T.kicker, { flex: 1 }]}>{m.l}</Text>
-                <View style={styles.miniBarRow}>
-                  {[0.6, 0.65, 0.68, 0.7, 0.72, 0.74, m.v/100].map((p, i) => (
-                    <View key={i} style={[styles.microBar, {
-                      height: Math.round(14 * p),
-                      backgroundColor: i === 6 ? C.accent : C.surface3,
-                    }]} />
-                  ))}
-                </View>
-                <Text style={[T.num, { fontSize: 18, fontWeight: '600', marginLeft: 12, width: 34, textAlign: 'right' }]}>
-                  {m.v}
-                </Text>
-              </View>
-            </FlutedGlass>
-          ))}
+          ].map(m => {
+            const isOpen = openScore === m.l;
+            const detail = SCORE_DETAIL[m.l];
+            return (
+              <FlutedGlass key={m.l} padding={10} style={isOpen ? { borderColor: C.accent } : undefined}>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => toggleScore(m.l)}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[T.kicker, { flex: 1 }]}>{m.l}</Text>
+                    <View style={styles.miniBarRow}>
+                      {[0.6, 0.65, 0.68, 0.7, 0.72, 0.74, m.v/100].map((p, i) => (
+                        <View key={i} style={[styles.microBar, {
+                          height: Math.round(14 * p),
+                          backgroundColor: i === 6 ? C.accent : C.surface3,
+                        }]} />
+                      ))}
+                    </View>
+                    <Text style={[T.num, { fontSize: 18, fontWeight: '600', marginLeft: 12, width: 34, textAlign: 'right' }]}>
+                      {m.v}
+                    </Text>
+                    <View style={[styles.scoreChevron, isOpen && { transform: [{ rotate: '90deg' }] }]}>
+                      <ChevronRight />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {isOpen && detail && (
+                  <View style={styles.scoreDetail}>
+                    <View style={styles.detailDivider} />
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <View style={styles.faceZoneWrap}>
+                        <FaceZone zone={detail.zone} />
+                        <Text style={[T.kicker, { color: C.accent, fontSize: 8, marginTop: 4, textAlign: 'center' }]}>
+                          {detail.region.toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[T.kicker, { color: C.ink3, marginBottom: 4 }]}>WHAT THIS MEASURES</Text>
+                        <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>{detail.meaning}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.tipBox}>
+                      <Text style={[T.kicker, { color: C.accent, marginBottom: 3 }]}>✦ HOW TO IMPROVE</Text>
+                      <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>{detail.tip}</Text>
+                    </View>
+                  </View>
+                )}
+              </FlutedGlass>
+            );
+          })}
         </View>
 
         {/* Menu list */}
@@ -215,6 +331,17 @@ const styles = StyleSheet.create({
   bar: { width: 6, borderRadius: 3 },
   miniBarRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 18 },
   microBar: { width: 4, borderRadius: 2 },
+  scoreChevron: { marginLeft: 8, width: 14, alignItems: 'center' },
+  scoreDetail: { marginTop: 10 },
+  detailDivider: { height: 1, backgroundColor: C.line, marginBottom: 10 },
+  faceZoneWrap: {
+    width: 72, alignItems: 'center', justifyContent: 'flex-start',
+    paddingTop: 2,
+  },
+  tipBox: {
+    marginTop: 10, padding: 10,
+    backgroundColor: C.accentSoft, borderRadius: R.md,
+  },
   menuList: {
     backgroundColor: C.surface,
     borderRadius: R.lg,

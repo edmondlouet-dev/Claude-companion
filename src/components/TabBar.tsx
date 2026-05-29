@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Svg, { Defs, Pattern, Rect } from 'react-native-svg';
-import { Sparkles, Maximize, Activity, Bookmark, User } from 'lucide-react-native';
+import { Sparkles, Maximize, Bookmark, User } from 'lucide-react-native';
+import { FibonacciIcon } from './FibonacciIcon';
 import { C, T } from '../tokens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -31,7 +32,7 @@ interface Props {
   mode?: 'normal' | 'lookmax';
 }
 
-const ICONS = { today: Sparkles, scan: Maximize, proportions: Activity, rituals: Bookmark, you: User } as const;
+const ICONS = { today: Sparkles, scan: Maximize, rituals: Bookmark, you: User } as const;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'today',       label: 'TODAY' },
@@ -42,8 +43,12 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 const TabIcon: React.FC<{ name: TabKey; active: boolean }> = ({ name, active }) => {
-  const Icon = ICONS[name];
-  return <Icon size={24} strokeWidth={1.2} color={active ? NAV_ACTIVE : NAV_INACTIVE} />;
+  const color = active ? NAV_ACTIVE : NAV_INACTIVE;
+  if (name === 'proportions') {
+    return <FibonacciIcon size={24} strokeWidth={1.2} color={color} showGrid={active} />;
+  }
+  const Icon = ICONS[name as Exclude<TabKey, 'proportions'>];
+  return <Icon size={24} strokeWidth={1.2} color={color} />;
 };
 
 export const TabBar: React.FC<Props> = ({ active, onChange, mode = 'normal' }) => {

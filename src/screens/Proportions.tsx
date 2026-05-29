@@ -69,6 +69,7 @@ export const Proportions: React.FC = () => {
   const {
     structural, userProfile, usageCounters,
     recordStructuralScan, showPremiumModal, openPremiumModal, dismissPremiumModal,
+    setPremiumStatus,
   } = useStore();
   const [active, setActive]     = useState('overall');
   const [analysed, setAnalysed] = useState(false);
@@ -200,6 +201,7 @@ export const Proportions: React.FC = () => {
       <PremiumModal
         visible={showPremiumModal}
         onClose={dismissPremiumModal}
+        onActivate={() => { setPremiumStatus(true); dismissPremiumModal(); }}
         reason="structural"
       />
     </View>

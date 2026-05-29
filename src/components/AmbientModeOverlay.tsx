@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions,
+  View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions, Easing,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, ChevronRight } from 'lucide-react-native';
 import { C, R, T, S } from '../tokens';
 
 const { width: W } = Dimensions.get('window');
-const STEP_DURATION = 30; // seconds per step
+const STEP_DURATION = 30; // fallback seconds per step
+const BAR_W = W - S.gutter * 2 - 32;
 
 export interface AmbientStep {
   label: string;
@@ -25,11 +26,10 @@ interface Props {
 export const AmbientModeOverlay: React.FC<Props> = ({
   steps, ritualKey, onComplete, onDismiss,
 }) => {
-  const [stepIdx, setStepIdx]     = useState(0);
+  const [stepIdx, setStepIdx]         = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim     = useRef(new Animated.Value(0)).current;
-  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalSteps = steps.length;
   const current    = steps[stepIdx];
@@ -40,39 +40,44 @@ export const AmbientModeOverlay: React.FC<Props> = ({
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
 
-  // Progress animation + countdown for current step
+  // Progress animation + countdown for the current step.
+  // Timestamp-driven so it tracks real elapsed time exactly, and guarded with a
+  // local `advanced` flag so a double-invoked effect (React 18 StrictMode) can
+  // never skip a step or run the countdown twice as fast.
   useEffect(() => {
     if (!current) return;
+    let advanced = false;
 
+    progressAnim.stopAnimation();
     progressAnim.setValue(0);
     setSecondsLeft(stepSecs);
 
+    const startedAt = Date.now();
     Animated.timing(progressAnim, {
       toValue: 1,
       duration: stepSecs * 1000,
+      easing: Easing.linear,
       useNativeDriver: false,
     }).start();
 
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setSecondsLeft(s => {
-        if (s <= 1) {
-          clearInterval(timerRef.current!);
-          advanceStep();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+    const id = setInterval(() => {
+      const elapsed   = (Date.now() - startedAt) / 1000;
+      const remaining = Math.max(0, Math.ceil(stepSecs - elapsed));
+      setSecondsLeft(remaining);
+      if (elapsed >= stepSecs && !advanced) {
+        advanced = true;
+        clearInterval(id);
+        advanceStep();
+      }
+    }, 200);
 
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => clearInterval(id);
   }, [stepIdx]);
 
   const advanceStep = () => {
     setStepIdx(i => {
       const next = i + 1;
       if (next >= totalSteps) {
-        // All done
         setTimeout(onComplete, 300);
         return i;
       }
@@ -82,7 +87,7 @@ export const AmbientModeOverlay: React.FC<Props> = ({
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, W - S.gutter * 2 - 32],
+    outputRange: [0, BAR_W],
   });
 
   return (

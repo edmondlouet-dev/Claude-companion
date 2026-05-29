@@ -13,7 +13,7 @@ import {
   ShoppingBag, ArrowUpRight, ChevronDown, ChevronUp,
   Activity, FlaskConical,
   ArrowDownRight, MoveUpRight, Hand, Feather,
-  TriangleAlert, CircleAlert, Sparkles,
+  TriangleAlert, CircleAlert, Sparkles, ScanFace,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
@@ -26,6 +26,7 @@ import {
   type BlueprintIcon, type SynergyKind,
 } from '../skin';
 import { PremiumModal } from '../components/PremiumModal';
+import { ARSculptOverlay, type ARStep } from '../components/ARSculptOverlay';
 import { C, R, T, S } from '../tokens';
 
 const FREE_RITUAL_COUNT = 3;
@@ -61,10 +62,12 @@ export const Rituals: React.FC = () => {
   const {
     lastScores, activeRitual, setActiveRitual, structural, shelf,
     userProfile, openPremiumModal, showPremiumModal, dismissPremiumModal,
+    setPremiumStatus,
   } = useStore();
   const [expanded, setExpanded]       = useState<string | null>(null);
   const [openBlueprint, setOpenBlueprint] = useState<string | null>(null);
   const [openSynergy, setOpenSynergy] = useState<string | null>(null);
+  const [arSession, setArSession]     = useState<{ steps: ARStep[]; ritual: string } | null>(null);
   const aiPick = aiSuggestRitual(lastScores);
 
   const tryRitual = (key: string) => setActiveRitual(activeRitual === key ? null : key);
@@ -241,6 +244,21 @@ export const Rituals: React.FC = () => {
                           </View>
                         );
                       })}
+
+                      {/* Enter AR mode — live arrows over the front camera */}
+                      {blueprint.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.arBtn}
+                          activeOpacity={0.85}
+                          onPress={() => setArSession({
+                            ritual: r.name,
+                            steps: blueprint.map(b => ({ icon: b.icon, title: b.title, body: b.body })),
+                          })}
+                        >
+                          <ScanFace size={ICON_SIZE} strokeWidth={ICON_SW} color={C.bg} />
+                          <Text style={[T.button, { color: C.bg, fontSize: 13 }]}>Follow in AR mode</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
 
@@ -323,8 +341,17 @@ export const Rituals: React.FC = () => {
       <PremiumModal
         visible={showPremiumModal}
         onClose={dismissPremiumModal}
+        onActivate={() => { setPremiumStatus(true); dismissPremiumModal(); }}
         reason="library"
       />
+
+      {arSession && (
+        <ARSculptOverlay
+          steps={arSession.steps}
+          ritualName={arSession.ritual}
+          onClose={() => setArSession(null)}
+        />
+      )}
     </View>
   );
 };
@@ -391,6 +418,13 @@ const styles = StyleSheet.create({
     minWidth: 64,
   },
   blueprintRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  arBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 4,
+    paddingVertical: 12,
+    borderRadius: R.md,
+    backgroundColor: C.accentInk,
+  },
   blueprintGlyph: {
     width: 38, height: 38, borderRadius: R.md,
     backgroundColor: C.accentSoft,
