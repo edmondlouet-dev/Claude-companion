@@ -3,12 +3,15 @@ import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Linking,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { Wind } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
 import { MetricStrip } from '../components/MetricStrip';
 import { RoutineRow } from '../components/RoutineRow';
 import { FlutedGlass } from '../components/FlutedGlass';
+import { LiveActivityWidget } from '../components/LiveActivityWidget';
+import { AmbientModeOverlay, type AmbientStep } from '../components/AmbientModeOverlay';
 import { useStore } from '../store';
 import { buildRoutine, routineGaps, STEP_LABEL, type ProductCategory } from '../products';
 import { getRitual, adaptRoutineForRitual } from '../rituals';
@@ -59,15 +62,33 @@ function getDailyInsight(scores: any, uv: number, tempUnit: string): string {
 
 export const Today: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { owned, streak, activeRitual, user, lastScores, temperatureUnit } = useStore();
+  const {
+    owned, streak, activeRitual, user, lastScores, temperatureUnit,
+    ritualStreaks, completeDailyRitual,
+  } = useStore();
   const [activeMetric, setActiveMetric] = useState('overall');
-  const [quickAdd, setQuickAdd] = useState('');
+  const [quickAdd, setQuickAdd]         = useState('');
+  const [showAmbient, setShowAmbient]   = useState(false);
 
   const routine = buildRoutine(owned, 'AM');
   const gaps    = routineGaps(owned);
 
   const ritual   = activeRitual ? getRitual(activeRitual) : undefined;
   const tomorrow = activeRitual ? adaptRoutineForRitual(activeRitual, owned) : [];
+
+  // Progressive decoupling: 7+ consecutive days on this ritual
+  const ritualMastered = !!(activeRitual && (ritualStreaks[activeRitual] ?? 0) >= 7);
+
+  // Ambient mode steps from the current morning routine
+  const ambientSteps: AmbientStep[] = routine.map(s => ({
+    label:       STEP_LABEL[s.category],
+    productName: s.name,
+    duration:    Math.max(s.mins * 20, 15),
+  }));
+
+  // Live Activity widget data
+  const completedCount = routine.filter((_, i) => i < 2).length;
+  const liveProgress   = routine.length > 0 ? completedCount / routine.length : 0;
 
   const today  = new Date();
   const days   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
@@ -83,6 +104,20 @@ export const Today: React.FC = () => {
   return (
     <View style={styles.root}>
       <Background />
+
+      {/* Ambient Mode overlay — full-screen, above everything */}
+      {showAmbient && (
+        <AmbientModeOverlay
+          steps={ambientSteps}
+          ritualKey={activeRitual ?? undefined}
+          onComplete={() => {
+            if (activeRitual) completeDailyRitual(activeRitual);
+            setShowAmbient(false);
+          }}
+          onDismiss={() => setShowAmbient(false)}
+        />
+      )}
+
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 4, paddingBottom: 100 }]}
@@ -103,6 +138,16 @@ export const Today: React.FC = () => {
             <Text style={[T.num, { fontSize: 13, fontWeight: '600', color: C.warn }]}>{streak}</Text>
           </View>
         </View>
+
+        {/* Live Activity widget — always shown when routine is in progress */}
+        {routine.length > 0 && (
+          <LiveActivityWidget
+            currentStep={STEP_LABEL[routine[Math.min(completedCount, routine.length - 1)]?.category] ?? ''}
+            progress={liveProgress}
+            streak={streak}
+            ritualName={ritual?.name}
+          />
+        )}
 
         {/* Date + greeting */}
         <View style={{ marginBottom: 14 }}>
@@ -142,9 +187,12 @@ export const Today: React.FC = () => {
         {/* Active ritual banner */}
         {ritual && (
           <FlutedGlass padding={10} style={{ marginBottom: 14, borderColor: C.accent }}>
-            <Text style={[T.kicker, { color: C.accent }]}>
-              ✦ ACTIVE RITUAL · {ritual.culture.toUpperCase()} · {ritual.name} · DAY 1 OF 7
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[T.kicker, { color: C.accent, flex: 1 }]}>
+                ✦ {ritual.culture.toUpperCase()} · {ritual.name}
+                {ritualMastered ? ' · MASTERED' : ` · DAY ${(ritualStreaks[activeRitual!] ?? 0) + 1} OF 7`}
+              </Text>
+            </View>
           </FlutedGlass>
         )}
 
@@ -163,31 +211,60 @@ export const Today: React.FC = () => {
           <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{routine.length} steps</Text>
         </View>
 
-        <View style={styles.quickAdd}>
-          <TextInput
-            style={styles.quickInput}
-            placeholder="add step…"
-            placeholderTextColor={C.ink3}
-            value={quickAdd}
-            onChangeText={setQuickAdd}
-            onSubmitEditing={() => setQuickAdd('')}
-          />
-          <TouchableOpacity style={styles.addBtn} activeOpacity={0.7}>
-            <Text style={[T.button, { color: C.ink, fontSize: 16, lineHeight: 18 }]}>+</Text>
+        {/* Ambient mode + quick-add row */}
+        <View style={styles.routineToolbar}>
+          <View style={styles.quickAdd}>
+            <TextInput
+              style={styles.quickInput}
+              placeholder="add step…"
+              placeholderTextColor={C.ink3}
+              value={quickAdd}
+              onChangeText={setQuickAdd}
+              onSubmitEditing={() => setQuickAdd('')}
+            />
+            <TouchableOpacity style={styles.addBtn} activeOpacity={0.7}>
+              <Text style={[T.button, { color: C.ink, fontSize: 16, lineHeight: 18 }]}>+</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={styles.ambientBtn}
+            onPress={() => setShowAmbient(true)}
+            activeOpacity={0.8}
+          >
+            <Wind size={14} strokeWidth={1.2} color={C.accentInk} />
+            <Text style={[T.button, { color: C.accentInk, fontSize: 11 }]}>Ambient</Text>
           </TouchableOpacity>
         </View>
 
-        {routine.map((step, i) => (
-          <RoutineRow
-            key={step.name}
-            idx={i + 1}
-            stepName={STEP_LABEL[step.category]}
-            productName={step.name}
-            time={i < 2 ? `7:4${i + 2}` : undefined}
-            defaultDone={i < 2}
-            why={WHY[step.category]}
-          />
-        ))}
+        {/* ── Progressive decoupling: mastered ritual → single conclude button ── */}
+        {ritualMastered && ritual ? (
+          <TouchableOpacity
+            style={styles.concludeBtn}
+            onPress={() => completeDailyRitual(activeRitual!)}
+            activeOpacity={0.85}
+          >
+            <Text style={[T.button, { color: C.bg, fontSize: 14 }]}>
+              ✦  Conclude Tonight's Mastered Ritual
+            </Text>
+            <Text style={[T.kicker, { color: 'rgba(255,255,255,0.55)', marginTop: 6, fontSize: 9 }]}>
+              {ritual.name} · {ritualStreaks[activeRitual!]} day streak
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            {routine.map((step, i) => (
+              <RoutineRow
+                key={step.name}
+                idx={i + 1}
+                stepName={STEP_LABEL[step.category]}
+                productName={step.name}
+                time={i < 2 ? `7:4${i + 2}` : undefined}
+                defaultDone={i < 2}
+                why={WHY[step.category]}
+              />
+            ))}
+          </>
+        )}
 
         {/* TOMORROW — reshaped by the active ritual */}
         {ritual && tomorrow.length > 0 && (
@@ -272,7 +349,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 8,
   },
-  quickAdd: { flexDirection: 'row', gap: 6, marginBottom: 10 },
+  routineToolbar: { flexDirection: 'row', gap: 8, marginBottom: 10, alignItems: 'stretch' },
+  quickAdd: { flex: 1, flexDirection: 'row', gap: 6 },
   quickInput: {
     flex: 1, backgroundColor: C.surface2, borderRadius: R.md,
     paddingHorizontal: 10, paddingVertical: 7,
@@ -283,6 +361,18 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.line2,
     backgroundColor: C.surface,
     alignItems: 'center', justifyContent: 'center',
+  },
+  ambientBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 7,
+    borderRadius: R.md,
+    backgroundColor: C.accentSoft,
+    borderWidth: 1, borderColor: C.accent + '55',
+  },
+  concludeBtn: {
+    backgroundColor: C.ink, borderRadius: R.md,
+    paddingVertical: 16, alignItems: 'center',
+    marginBottom: 14,
   },
   gapDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.warn, flexShrink: 0 },
   browseBtn: {

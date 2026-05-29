@@ -7,8 +7,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { MetricStrip } from '../components/MetricStrip';
 import { FlutedGlass } from '../components/FlutedGlass';
+import { PremiumModal } from '../components/PremiumModal';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
+
+function isWithin7Days(dateStr: string | null): boolean {
+  if (!dateStr) return false;
+  return Date.now() - new Date(dateStr).getTime() < 7 * 24 * 60 * 60 * 1000;
+}
 
 const { width: W } = Dimensions.get('window');
 const DIAGRAM_SIZE = Math.min(W - S.gutter * 2, 280);
@@ -60,8 +66,22 @@ const MinimalistFace: React.FC<{ size: number }> = ({ size }) => {
 
 export const Proportions: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { structural } = useStore();
-  const [active, setActive] = useState('overall');
+  const {
+    structural, userProfile, usageCounters,
+    recordStructuralScan, showPremiumModal, openPremiumModal, dismissPremiumModal,
+  } = useStore();
+  const [active, setActive]     = useState('overall');
+  const [analysed, setAnalysed] = useState(false);
+
+  const locked = !userProfile.isPremium &&
+    usageCounters.structuralScansThisWeek >= 1 &&
+    isWithin7Days(usageCounters.lastStructuralScanDate);
+
+  const handleAnalyse = () => {
+    if (locked) { openPremiumModal(); return; }
+    recordStructuralScan();
+    setAnalysed(true);
+  };
 
   const tiltLabel = structural.canthalTilt < 0 ? 'Slightly Downward'
     : structural.canthalTilt > 0 ? 'Positive' : 'Neutral';
@@ -155,7 +175,33 @@ export const Proportions: React.FC = () => {
             <Text style={[T.bodySm, { color: C.ink3, marginTop: 6, lineHeight: 17 }]}>{ins.body}</Text>
           </FlutedGlass>
         ))}
+
+        {/* Structural scan CTA — gated for second scan within 7 days */}
+        <TouchableOpacity
+          style={[styles.analyseBtn, locked && styles.analyseBtnLocked]}
+          onPress={handleAnalyse}
+          activeOpacity={0.85}
+        >
+          <Text style={[T.button, { color: locked ? C.ink3 : C.bg, fontSize: 13 }]}>
+            {analysed
+              ? '✓  Structural analysis complete'
+              : locked
+                ? '⊘  Unlock structural rescan · Premium'
+                : '⊙  Analyse facial structure'}
+          </Text>
+          {locked && (
+            <Text style={[T.kicker, { color: C.ink4, marginTop: 5, fontSize: 9 }]}>
+              Free scan used · resets in 7 days · or unlock Premium
+            </Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
+
+      <PremiumModal
+        visible={showPremiumModal}
+        onClose={dismissPremiumModal}
+        reason="structural"
+      />
     </View>
   );
 };
@@ -169,4 +215,18 @@ const styles = StyleSheet.create({
   diagramWrap: { alignItems: 'center', backgroundColor: '#FAF8F3', borderRadius: R.md, paddingVertical: 12 },
   footer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   insightTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.pill, marginLeft: 8 },
+  analyseBtn: {
+    backgroundColor: C.ink,
+    borderRadius: R.md,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    alignItems: 'center' as const,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  analyseBtnLocked: {
+    backgroundColor: '#F0EDE8',
+    borderWidth: 1,
+    borderColor: '#DDD8D0',
+  },
 });

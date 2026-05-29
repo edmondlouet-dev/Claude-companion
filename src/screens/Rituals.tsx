@@ -4,7 +4,7 @@
  * Each tradition links the structural scan (Proportions) to a tailored
  * application blueprint and an editorial shelf-synergy report.
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking,
 } from 'react-native';
@@ -25,7 +25,10 @@ import {
   getStructuralBlueprint, getSynergyReport,
   type BlueprintIcon, type SynergyKind,
 } from '../skin';
+import { PremiumModal } from '../components/PremiumModal';
 import { C, R, T, S } from '../tokens';
+
+const FREE_RITUAL_COUNT = 3;
 
 const ICON_SIZE = 24;
 const ICON_SW   = 1.2;
@@ -55,19 +58,24 @@ const SYNERGY_STYLE: Record<SynergyKind, { Icon: typeof Sparkles; color: string;
 
 export const Rituals: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { lastScores, activeRitual, setActiveRitual, structural, shelf } = useStore();
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const {
+    lastScores, activeRitual, setActiveRitual, structural, shelf,
+    userProfile, openPremiumModal, showPremiumModal, dismissPremiumModal,
+  } = useStore();
+  const [expanded, setExpanded]       = useState<string | null>(null);
   const [openBlueprint, setOpenBlueprint] = useState<string | null>(null);
   const [openSynergy, setOpenSynergy] = useState<string | null>(null);
   const aiPick = aiSuggestRitual(lastScores);
 
   const tryRitual = (key: string) => setActiveRitual(activeRitual === key ? null : key);
 
-  const openCard = (key: string) => {
+  const openCard = useCallback((key: string, idx: number) => {
+    const isLocked = !userProfile.isPremium && idx >= FREE_RITUAL_COUNT;
+    if (isLocked) { openPremiumModal(); return; }
     setExpanded(prev => (prev === key ? null : key));
     setOpenBlueprint(null);
     setOpenSynergy(null);
-  };
+  }, [userProfile.isPremium, openPremiumModal]);
 
   return (
     <View style={styles.root}>
@@ -111,10 +119,11 @@ export const Rituals: React.FC = () => {
         </FlutedGlass>
 
         {/* Ritual cards */}
-        {RITUALS.map(r => {
+        {RITUALS.map((r, idx) => {
           const isExpanded = expanded === r.key;
           const isActive   = activeRitual === r.key;
           const isAi       = r.key === aiPick;
+          const isLocked   = !userProfile.isPremium && idx >= FREE_RITUAL_COUNT;
           const blueprint  = getStructuralBlueprint(r.key, structural);
           const synergy    = getSynergyReport(r.key, r.name, structural.barrierStatus, shelf);
 
@@ -122,19 +131,25 @@ export const Rituals: React.FC = () => {
             <FlutedGlass
               key={r.key}
               padding={14}
-              style={[styles.card, isActive && styles.cardActive, isAi && !isActive && styles.cardAi]}
+              style={[
+                styles.card,
+                isActive && styles.cardActive,
+                isAi && !isActive && styles.cardAi,
+                isLocked && styles.cardLocked,
+              ]}
             >
               {/* Card header */}
-              <TouchableOpacity onPress={() => openCard(r.key)} activeOpacity={0.8}>
+              <TouchableOpacity onPress={() => openCard(r.key, idx)} activeOpacity={0.8}>
                 <View style={styles.cardHead}>
                   <View style={styles.iconWrap}>
                     <RitualIcon id={r.key} color={isActive ? NAV_ACTIVE : NAV_INACTIVE} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[T.kicker, { color: isActive ? C.accent : C.ink3 }]}>{r.culture.toUpperCase()}</Text>
-                      {isAi    && <Pill label="AI PICK" variant="accent" />}
+                      <Text style={[T.kicker, { color: isActive ? C.accent : isLocked ? C.ink4 : C.ink3 }]}>{r.culture.toUpperCase()}</Text>
+                      {isAi    && !isLocked && <Pill label="AI PICK" variant="accent" />}
                       {isActive && <Pill label="ACTIVE" variant="on" />}
+                      {isLocked && <Pill label="PREMIUM" variant="warn" />}
                     </View>
                     <Text style={[T.body, { fontWeight: '600', fontSize: 15, color: C.ink, marginTop: 2 }]}>{r.name}</Text>
                     <Text style={[T.bodySm, { color: C.ink3 }]}>{r.tagline}</Text>
@@ -304,6 +319,12 @@ export const Rituals: React.FC = () => {
           </Text>
         </View>
       </ScrollView>
+
+      <PremiumModal
+        visible={showPremiumModal}
+        onClose={dismissPremiumModal}
+        reason="library"
+      />
     </View>
   );
 };
@@ -321,6 +342,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 10, borderColor: C.line },
   cardActive: { borderColor: C.accent, backgroundColor: C.accentSoft },
   cardAi: { borderColor: C.accent + '66' },
+  cardLocked: { opacity: 0.7 },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   iconWrap: { width: 30, alignItems: 'center', paddingTop: 2 },
   cardBody: { marginTop: 12 },

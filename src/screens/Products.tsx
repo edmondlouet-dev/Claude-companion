@@ -1,63 +1,92 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
-  Modal, FlatList, Image, ActivityIndicator,
+  Modal, FlatList, Image, ActivityIndicator, Linking,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import {
+  ScanBarcode, ShoppingBag, TriangleAlert, Droplet,
+  ArrowUpRight, ChevronRight, Minus,
+} from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { Pill } from '../components/Pill';
-import { useStore } from '../store';
+import { ProductBarcodeScanner } from '../components/ProductBarcodeScanner';
+import { useStore, type ShelfProduct } from '../store';
 import { CATALOG, registerProduct, type ProductCategory } from '../products';
 import { searchProducts, type OBFProduct } from '../services/openbeauty';
 import { C, R, T, S } from '../tokens';
 
+// ── Harsh active detection (mirrors scanner) ──────────────────────────────────
+const HARSH_ACTIVES = [
+  'retinol', 'retinyl', 'tretinoin', 'adapalene',
+  'glycolic acid', 'salicylic acid', 'benzoyl peroxide',
+  'ascorbic acid', 'vitamin c', 'lactic acid',
+];
+
+function harshActiveIn(ingredients: string[]): string | null {
+  for (const h of HARSH_ACTIVES) {
+    if (ingredients.some(i => i.toLowerCase().includes(h))) return h;
+  }
+  return null;
+}
+
+// ── Volume bar ────────────────────────────────────────────────────────────────
+const VolumeBar: React.FC<{ value: number }> = ({ value }) => {
+  const color = value < 20 ? C.danger : value < 40 ? C.warn : C.sage;
+  return (
+    <View style={volStyles.track}>
+      <View style={[volStyles.fill, { width: `${value}%` as any, backgroundColor: color }]} />
+    </View>
+  );
+};
+const volStyles = StyleSheet.create({
+  track: { height: 3, backgroundColor: C.line, borderRadius: 2, overflow: 'hidden', flex: 1 },
+  fill:  { height: 3, borderRadius: 2 },
+});
+
+// ── Back arrow ────────────────────────────────────────────────────────────────
 const BackArrow = () => (
   <Svg width={18} height={18} viewBox="0 0 24 24">
     <Path d="M19 12H5M11 18l-6-6 6-6" stroke={C.ink} strokeWidth={1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
-const DropletIcon = () => (
-  <Svg width={18} height={18} viewBox="0 0 24 24">
-    <Path d="M12 3c-4 6-7 9-7 13a7 7 0 0 0 14 0c0-4-3-7-7-13z" stroke={C.ink3} strokeWidth={1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-interface ProductThumbProps { uri: string | null }
-const ProductThumb: React.FC<ProductThumbProps> = ({ uri }) => {
+// ── Product thumb ─────────────────────────────────────────────────────────────
+const ProductThumb: React.FC<{ uri: string | null }> = ({ uri }) => {
   const [failed, setFailed] = useState(false);
   if (!uri || failed) {
     return (
-      <View style={styles.thumbFallback}>
-        <DropletIcon />
+      <View style={styles.thumb}>
+        <Droplet size={18} strokeWidth={1.2} color={C.ink3} />
       </View>
     );
   }
   return (
-    <Image
-      source={{ uri }}
-      style={styles.thumb}
-      onError={() => setFailed(true)}
-      resizeMode="contain"
-    />
+    <Image source={{ uri }} style={styles.thumb} onError={() => setFailed(true)} resizeMode="contain" />
   );
 };
 
-interface Props {
-  onBack: () => void;
-}
+interface Props { onBack: () => void }
 
 export const Products: React.FC<Props> = ({ onBack }) => {
   const insets = useSafeAreaInsets();
-  const { owned, addProduct, removeProduct } = useStore();
-  const [showAdd, setShowAdd] = useState(false);
-  const [query, setQuery] = useState('');
+  const {
+    owned, addProduct, removeProduct,
+    userShelf, addBarcodeProduct,
+    faceMetrics,
+  } = useStore();
+
+  const [showScanner, setShowScanner] = useState(false);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [query, setQuery]     = useState('');
   const [results, setResults] = useState<OBFProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const barrierFatigued = /sensiti|fatig/i.test(faceMetrics.barrierStatus);
 
   const handleSearch = useCallback((text: string) => {
     setQuery(text);
@@ -81,22 +110,19 @@ export const Products: React.FC<Props> = ({ onBack }) => {
     registerProduct(product.name, product.category as ProductCategory);
     addProduct(product.name);
     setShowAdd(false);
-    setQuery('');
-    setResults([]);
-    setSearched(false);
+    setQuery(''); setResults([]); setSearched(false);
   };
 
   const closeModal = () => {
     setShowAdd(false);
-    setQuery('');
-    setResults([]);
-    setSearched(false);
+    setQuery(''); setResults([]); setSearched(false);
   };
 
   return (
     <View style={styles.root}>
       <Background />
       <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
+
         {/* Nav bar */}
         <View style={[styles.navBar, { paddingHorizontal: S.gutter }]}>
           <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.7}>
@@ -104,12 +130,21 @@ export const Products: React.FC<Props> = ({ onBack }) => {
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 8 }}>
             <Text style={[T.h2, { fontSize: 18, fontFamily: 'Inter_600SemiBold', letterSpacing: 0 }]}>
-              My products
+              My shelf
             </Text>
             <Text style={[T.kicker, { color: C.ink3, marginTop: 2 }]}>
-              {owned.length} owned · routine auto-generates
+              {userShelf.length} products · INCI data linked
             </Text>
           </View>
+          {/* Barcode scanner CTA */}
+          <TouchableOpacity
+            style={styles.scannerBtn}
+            onPress={() => setShowScanner(true)}
+            activeOpacity={0.8}
+          >
+            <ScanBarcode size={18} strokeWidth={1.2} color={C.accentInk} />
+            <Text style={[T.button, { fontSize: 11, color: C.accentInk }]}>Scan</Text>
+          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -117,8 +152,91 @@ export const Products: React.FC<Props> = ({ onBack }) => {
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
+          {/* ── INCI Shelf (barcode-scanned products) ──────────────────────── */}
           <View style={styles.sectionH}>
-            <Text style={T.kicker}>OWNED</Text>
+            <Text style={T.kicker}>MY SHELF · INCI TRACKED</Text>
+            <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{userShelf.length}</Text>
+          </View>
+
+          {userShelf.map(product => {
+            const harsh   = harshActiveIn(product.ingredients);
+            const conflict = barrierFatigued && !!harsh;
+            const low      = product.remainingVolume < 25;
+
+            return (
+              <FlutedGlass key={product.id} padding={12} style={{ marginBottom: 10 }}>
+                {/* Conflict warning */}
+                {conflict && (
+                  <View style={styles.conflictBanner}>
+                    <TriangleAlert size={14} strokeWidth={1.2} color={C.danger} />
+                    <Text style={[T.bodySm, { color: C.danger, flex: 1, fontSize: 11, lineHeight: 15 }]}>
+                      <Text style={{ fontWeight: '600' }}>{harsh}</Text> conflicts with your Sensitive / Fatigued barrier.
+                      Consider your Hyaluronic Acid instead tonight.
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.productRow}>
+                  {/* Icon */}
+                  <View style={[styles.thumb, { backgroundColor: C.accentSoft }]}>
+                    <ShoppingBag size={16} strokeWidth={1.2} color={C.accentInk} />
+                  </View>
+
+                  {/* Info */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[T.body, { fontWeight: '600', fontSize: 13, color: C.ink }]} numberOfLines={1}>
+                      {product.name}
+                    </Text>
+                    <Text style={[T.kicker, { color: C.ink3, marginTop: 2 }]}>{product.brand}</Text>
+
+                    {/* Volume row */}
+                    <View style={styles.volumeRow}>
+                      <VolumeBar value={product.remainingVolume} />
+                      <Text style={[T.num, {
+                        fontSize: 10,
+                        color: product.remainingVolume < 20 ? C.danger : C.ink3,
+                      }]}>
+                        {product.remainingVolume}%
+                      </Text>
+                    </View>
+
+                    {/* Top ingredients */}
+                    <View style={styles.ingredientRow}>
+                      {product.ingredients.slice(0, 3).map(ing => (
+                        <View key={ing} style={[
+                          styles.ingChip,
+                          HARSH_ACTIVES.some(h => ing.toLowerCase().includes(h)) && styles.ingChipWarn,
+                        ]}>
+                          <Text style={[T.pill, {
+                            fontSize: 9,
+                            color: HARSH_ACTIVES.some(h => ing.toLowerCase().includes(h)) ? C.danger : C.ink3,
+                          }]}>
+                            {ing}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Restock button (visible when low) */}
+                {low && (
+                  <TouchableOpacity
+                    style={styles.restockBtn}
+                    onPress={() => Linking.openURL(product.purchaseUrl)}
+                    activeOpacity={0.8}
+                  >
+                    <ArrowUpRight size={13} strokeWidth={1.2} color={C.accentInk} />
+                    <Text style={[T.button, { fontSize: 11, color: C.accentInk }]}>Restock Product</Text>
+                  </TouchableOpacity>
+                )}
+              </FlutedGlass>
+            );
+          })}
+
+          {/* ── Owned products (routine-linked) ─────────────────────────── */}
+          <View style={[styles.sectionH, { marginTop: 10 }]}>
+            <Text style={T.kicker}>OWNED · ROUTINE LINKED</Text>
             <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{owned.length}</Text>
           </View>
 
@@ -128,8 +246,8 @@ export const Products: React.FC<Props> = ({ onBack }) => {
             return (
               <FlutedGlass key={name} padding={12} style={{ marginBottom: 8 }}>
                 <View style={styles.productRow}>
-                  <View style={styles.thumbFallback}>
-                    <DropletIcon />
+                  <View style={styles.thumb}>
+                    <Droplet size={16} strokeWidth={1.2} color={C.ink3} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[T.body, { fontWeight: '600', fontSize: 13, color: C.ink }]} numberOfLines={1}>
@@ -149,24 +267,46 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                   >
-                    <Text style={[T.body, { color: C.ink3, fontSize: 16 }]}>✕</Text>
+                    <Minus size={16} strokeWidth={1.2} color={C.ink3} />
                   </TouchableOpacity>
                 </View>
               </FlutedGlass>
             );
           })}
 
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => setShowAdd(true)}
-            activeOpacity={0.8}
-          >
-            <Text style={[T.button, { color: C.ink }]}>+ Add product</Text>
-          </TouchableOpacity>
+          {/* Add buttons */}
+          <View style={styles.addRow}>
+            <TouchableOpacity
+              style={[styles.addBtn, { flex: 1 }]}
+              onPress={() => setShowAdd(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={[T.button, { color: C.ink }]}>+ Add product</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.scanBtn]}
+              onPress={() => setShowScanner(true)}
+              activeOpacity={0.8}
+            >
+              <ScanBarcode size={16} strokeWidth={1.2} color={C.accentInk} />
+              <Text style={[T.button, { color: C.accentInk, fontSize: 12 }]}>Scan barcode</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
 
-      {/* Add product modal — live OBF search */}
+      {/* Barcode scanner modal */}
+      <ProductBarcodeScanner
+        visible={showScanner}
+        barrierStatus={faceMetrics.barrierStatus}
+        onClose={() => setShowScanner(false)}
+        onProductAdded={(p) => {
+          addBarcodeProduct(p);
+          setShowScanner(false);
+        }}
+      />
+
+      {/* OBF search modal */}
       <Modal visible={showAdd} animationType="slide" presentationStyle="formSheet" onRequestClose={closeModal}>
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
@@ -175,7 +315,6 @@ export const Products: React.FC<Props> = ({ onBack }) => {
               <Text style={[T.body, { color: C.ink3, fontSize: 18 }]}>✕</Text>
             </TouchableOpacity>
           </View>
-
           <View style={styles.searchWrap}>
             <TextInput
               style={styles.searchInput}
@@ -196,7 +335,7 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                 SEARCH BY BRAND, NAME, OR INGREDIENT
               </Text>
               <Text style={[T.bodySm, { color: C.ink4, textAlign: 'center', marginTop: 6 }]}>
-                Powered by Open Beauty Facts — millions of real products
+                Powered by Open Beauty Facts
               </Text>
             </View>
           )}
@@ -204,9 +343,6 @@ export const Products: React.FC<Props> = ({ onBack }) => {
           {searched && results.length === 0 && !loading && (
             <View style={styles.emptyState}>
               <Text style={[T.kicker, { color: C.ink3, textAlign: 'center' }]}>NO RESULTS</Text>
-              <Text style={[T.bodySm, { color: C.ink4, textAlign: 'center', marginTop: 6 }]}>
-                Try a different name or brand
-              </Text>
             </View>
           )}
 
@@ -214,20 +350,12 @@ export const Products: React.FC<Props> = ({ onBack }) => {
             data={results}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.catalogRow}
-                onPress={() => handleAdd(item)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={styles.catalogRow} onPress={() => handleAdd(item)} activeOpacity={0.7}>
                 <ProductThumb uri={item.imageUrl} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[T.body, { fontWeight: '500', color: C.ink }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
+                  <Text style={[T.body, { fontWeight: '500', color: C.ink }]} numberOfLines={1}>{item.name}</Text>
                   {item.brand ? (
-                    <Text style={[T.bodySm, { color: C.ink3, marginTop: 1 }]} numberOfLines={1}>
-                      {item.brand}
-                    </Text>
+                    <Text style={[T.bodySm, { color: C.ink3, marginTop: 1 }]} numberOfLines={1}>{item.brand}</Text>
                   ) : null}
                   <View style={styles.pillRow}>
                     <Pill label={item.category} />
@@ -249,109 +377,76 @@ export const Products: React.FC<Props> = ({ onBack }) => {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   screen: { flex: 1 },
-  navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  backBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  navBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  scannerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: C.accentSoft,
+    borderRadius: R.md, paddingHorizontal: 10, paddingVertical: 7,
+    borderWidth: 1, borderColor: C.accent + '44',
   },
   scroll: { paddingHorizontal: S.gutter },
   sectionH: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 10,
   },
-  productRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  conflictBanner: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: '#FBEEEA',
+    borderRadius: R.md, padding: 10, marginBottom: 10,
+    borderWidth: 1, borderColor: 'rgba(178,63,44,0.22)',
   },
+  productRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   thumb: {
-    width: 40,
-    height: 40,
+    width: 40, height: 40, borderRadius: R.md,
+    backgroundColor: C.surface2, flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 4 },
+  ingredientRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  ingChip: {
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: R.pill, backgroundColor: C.surface2,
+    borderWidth: 1, borderColor: C.line,
+  },
+  ingChipWarn: { backgroundColor: '#FBEEEA', borderColor: 'rgba(178,63,44,0.25)' },
+  restockBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-end', marginTop: 10,
+    paddingHorizontal: 10, paddingVertical: 6,
     borderRadius: R.md,
-    backgroundColor: C.surface2,
-    flexShrink: 0,
+    backgroundColor: C.accentSoft,
+    borderWidth: 1, borderColor: C.accent + '55',
   },
-  thumbFallback: {
-    width: 40,
-    height: 40,
-    borderRadius: R.md,
-    backgroundColor: C.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  pillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 5,
-  },
-  removeBtn: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 5 },
+  removeBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  addRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   addBtn: {
-    borderWidth: 1,
-    borderColor: C.line2,
-    borderRadius: R.md,
-    paddingVertical: 12,
-    alignItems: 'center',
+    borderWidth: 1, borderColor: C.line2, borderRadius: R.md,
+    paddingVertical: 12, alignItems: 'center',
     backgroundColor: C.surface,
-    marginTop: 4,
   },
-  modal: {
-    flex: 1,
-    backgroundColor: C.bg,
-    paddingTop: 24,
+  scanBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderColor: C.accent + '55',
+    borderRadius: R.md, paddingVertical: 12, paddingHorizontal: 14,
+    backgroundColor: C.accentSoft,
   },
+  modal: { flex: 1, backgroundColor: C.bg, paddingTop: 24 },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: S.gutter,
-    marginBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', paddingHorizontal: S.gutter, marginBottom: 16,
   },
-  searchWrap: {
-    marginHorizontal: S.gutter,
-    marginBottom: 12,
-    position: 'relative',
-  },
+  searchWrap: { marginHorizontal: S.gutter, marginBottom: 12, position: 'relative' },
   searchInput: {
-    backgroundColor: C.surface2,
-    borderRadius: R.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    paddingRight: 36,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: C.ink,
+    backgroundColor: C.surface2, borderRadius: R.md,
+    paddingHorizontal: 12, paddingVertical: 10, paddingRight: 36,
+    fontFamily: 'Inter_400Regular', fontSize: 13, color: C.ink,
   },
-  searchSpinner: {
-    position: 'absolute',
-    right: 10,
-    top: 10,
-  },
-  emptyState: {
-    paddingTop: 48,
-    paddingHorizontal: S.gutter,
-    alignItems: 'center',
-  },
+  searchSpinner: { position: 'absolute', right: 10, top: 10 },
+  emptyState: { paddingTop: 48, paddingHorizontal: S.gutter, alignItems: 'center' },
   catalogRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: S.gutter,
-    paddingVertical: 12,
-    gap: 12,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: S.gutter, paddingVertical: 12, gap: 12,
   },
 });

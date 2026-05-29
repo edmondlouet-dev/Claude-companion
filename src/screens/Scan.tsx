@@ -44,7 +44,7 @@ const metricsFromScores = (s: any) => [
 
 export const Scan: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { setLastScores } = useStore();
+  const { setLastScores, updateMetrics, incrementSurfaceScan } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep]     = useState<Step>('preview');
   const [scores, setScores] = useState<any>(null);
@@ -70,6 +70,14 @@ export const Scan: React.FC = () => {
       const result = await analyzeFrame(base64);
       setScores(result);
       setLastScores(result);
+      // Simulate MediaPipe Face Mesh data update → drives Today + Rituals re-renders
+      updateMetrics({
+        canthalTilt:    -2,
+        midfaceRatio:   1.14,
+        fluidRetention: 'Moderate',
+        barrierStatus:  'Sensitive / Fatigued',
+      });
+      incrementSurfaceScan();
       setStep('done');
     } catch {
       setStep('preview');
@@ -109,7 +117,7 @@ export const Scan: React.FC = () => {
           </View>
           <View style={[styles.aiBadge, VISION_ENABLED ? { borderColor: C.accent } : {}]}>
             <Text style={[T.kicker, { color: VISION_ENABLED ? C.accent : C.ink3, fontSize: 9 }]}>
-              {VISION_ENABLED ? 'AI ACTIVE' : 'AI SIMULATED'}
+              {VISION_ENABLED ? 'MEDIAPIPE · LIVE' : 'MEDIAPIPE · SIM'}
             </Text>
           </View>
         </View>

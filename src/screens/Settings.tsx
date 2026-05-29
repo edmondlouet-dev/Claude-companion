@@ -20,7 +20,7 @@ interface Props { onBack: () => void }
 
 export const Settings: React.FC<Props> = ({ onBack }) => {
   const insets = useSafeAreaInsets();
-  const { temperatureUnit, setTemperatureUnit } = useStore();
+  const { temperatureUnit, setTemperatureUnit, userProfile, togglePassiveTracking } = useStore();
 
   const isCelsius = temperatureUnit === 'C';
 
@@ -72,6 +72,25 @@ export const Settings: React.FC<Props> = ({ onBack }) => {
                   <Text style={[T.button, { fontSize: 13, color: !isCelsius ? C.accentInk : C.ink3 }]}>°F</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </FlutedGlass>
+
+          {/* Passive vanity tracking */}
+          <Text style={[T.kicker, { marginBottom: 8 }]}>TRACKING</Text>
+          <FlutedGlass padding={0} style={{ marginBottom: 18, overflow: 'hidden' }}>
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[T.body, { fontWeight: '500' }]}>Passive Vanity Tracking</Text>
+                <Text style={[T.bodySm, { color: C.ink3, marginTop: 2, lineHeight: 17 }]}>
+                  Quietly logs passive metrics and habit streaks in the background.
+                </Text>
+              </View>
+              <Switch
+                value={userProfile.passiveTrackingEnabled}
+                onValueChange={togglePassiveTracking}
+                trackColor={{ false: C.surface3, true: C.accent + '80' }}
+                thumbColor={userProfile.passiveTrackingEnabled ? C.accent : C.ink4}
+              />
             </View>
           </FlutedGlass>
 
