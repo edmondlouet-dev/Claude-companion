@@ -5,15 +5,15 @@ import {
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import {
-  ScanBarcode, ShoppingBag, TriangleAlert, Droplet,
-  ArrowUpRight, ChevronRight, Minus,
+  ScanText, ShoppingBag, TriangleAlert, Droplet,
+  ArrowUpRight, Minus,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { Pill } from '../components/Pill';
-import { ProductBarcodeScanner } from '../components/ProductBarcodeScanner';
-import { useStore, type ShelfProduct } from '../store';
+import { ProductLabelScanner } from '../components/ProductLabelScanner';
+import { useStore } from '../store';
 import { CATALOG, registerProduct, type ProductCategory } from '../products';
 import { searchProducts, type OBFProduct } from '../services/openbeauty';
 import { C, R, T, S } from '../tokens';
@@ -34,7 +34,7 @@ function harshActiveIn(ingredients: string[]): string | null {
 
 // ── Volume bar ────────────────────────────────────────────────────────────────
 const VolumeBar: React.FC<{ value: number }> = ({ value }) => {
-  const color = value < 20 ? C.danger : value < 40 ? C.warn : C.sage;
+  const color = value < 25 ? C.warn : value < 45 ? C.accent : C.sage;
   return (
     <View style={volStyles.track}>
       <View style={[volStyles.fill, { width: `${value}%` as any, backgroundColor: color }]} />
@@ -74,7 +74,7 @@ export const Products: React.FC<Props> = ({ onBack }) => {
   const insets = useSafeAreaInsets();
   const {
     owned, addProduct, removeProduct,
-    userShelf, addBarcodeProduct,
+    userShelf, addBarcodeProduct, removeBarcodeProduct,
     faceMetrics,
   } = useStore();
 
@@ -136,14 +136,14 @@ export const Products: React.FC<Props> = ({ onBack }) => {
               {userShelf.length} products · INCI data linked
             </Text>
           </View>
-          {/* Barcode scanner CTA */}
+          {/* Label scanner CTA */}
           <TouchableOpacity
             style={styles.scannerBtn}
             onPress={() => setShowScanner(true)}
             activeOpacity={0.8}
           >
-            <ScanBarcode size={18} strokeWidth={1.2} color={C.accentInk} />
-            <Text style={[T.button, { fontSize: 11, color: C.accentInk }]}>Scan</Text>
+            <ScanText size={18} strokeWidth={1.2} color={C.accentInk} />
+            <Text style={[T.button, { fontSize: 11, color: C.accentInk }]}>Scan label</Text>
           </TouchableOpacity>
         </View>
 
@@ -165,13 +165,12 @@ export const Products: React.FC<Props> = ({ onBack }) => {
 
             return (
               <FlutedGlass key={product.id} padding={12} style={{ marginBottom: 10 }}>
-                {/* Conflict warning */}
+                {/* Conflict note — softer, shorter */}
                 {conflict && (
                   <View style={styles.conflictBanner}>
-                    <TriangleAlert size={14} strokeWidth={1.2} color={C.danger} />
-                    <Text style={[T.bodySm, { color: C.danger, flex: 1, fontSize: 11, lineHeight: 15 }]}>
-                      <Text style={{ fontWeight: '600' }}>{harsh}</Text> conflicts with your Sensitive / Fatigued barrier.
-                      Consider your Hyaluronic Acid instead tonight.
+                    <TriangleAlert size={13} strokeWidth={1.3} color={C.warn} />
+                    <Text style={[T.bodySm, { color: C.ink2, flex: 1, fontSize: 11, lineHeight: 15 }]}>
+                      Has <Text style={{ fontWeight: '600' }}>{harsh}</Text> — ease in gently while your barrier recovers.
                     </Text>
                   </View>
                 )}
@@ -194,7 +193,7 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                       <VolumeBar value={product.remainingVolume} />
                       <Text style={[T.num, {
                         fontSize: 10,
-                        color: product.remainingVolume < 20 ? C.danger : C.ink3,
+                        color: product.remainingVolume < 20 ? C.warn : C.ink3,
                       }]}>
                         {product.remainingVolume}%
                       </Text>
@@ -203,20 +202,22 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                     {/* Top ingredients */}
                     <View style={styles.ingredientRow}>
                       {product.ingredients.slice(0, 3).map(ing => (
-                        <View key={ing} style={[
-                          styles.ingChip,
-                          HARSH_ACTIVES.some(h => ing.toLowerCase().includes(h)) && styles.ingChipWarn,
-                        ]}>
-                          <Text style={[T.pill, {
-                            fontSize: 9,
-                            color: HARSH_ACTIVES.some(h => ing.toLowerCase().includes(h)) ? C.danger : C.ink3,
-                          }]}>
-                            {ing}
-                          </Text>
+                        <View key={ing} style={styles.ingChip}>
+                          <Text style={[T.pill, { fontSize: 9, color: C.ink3 }]}>{ing}</Text>
                         </View>
                       ))}
                     </View>
                   </View>
+
+                  {/* Remove from shelf */}
+                  <TouchableOpacity
+                    style={styles.removeBtn}
+                    onPress={() => removeBarcodeProduct(product.id)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                  >
+                    <Minus size={16} strokeWidth={1.2} color={C.ink3} />
+                  </TouchableOpacity>
                 </View>
 
                 {/* Restock button (visible when low) */}
@@ -288,15 +289,15 @@ export const Products: React.FC<Props> = ({ onBack }) => {
               onPress={() => setShowScanner(true)}
               activeOpacity={0.8}
             >
-              <ScanBarcode size={16} strokeWidth={1.2} color={C.accentInk} />
-              <Text style={[T.button, { color: C.accentInk, fontSize: 12 }]}>Scan barcode</Text>
+              <ScanText size={16} strokeWidth={1.2} color={C.accentInk} />
+              <Text style={[T.button, { color: C.accentInk, fontSize: 12 }]}>Scan label</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
       </View>
 
-      {/* Barcode scanner modal */}
-      <ProductBarcodeScanner
+      {/* AI label scanner modal */}
+      <ProductLabelScanner
         visible={showScanner}
         barrierStatus={faceMetrics.barrierStatus}
         onClose={() => setShowScanner(false)}
@@ -392,9 +393,9 @@ const styles = StyleSheet.create({
   },
   conflictBanner: {
     flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: '#FBEEEA',
+    backgroundColor: '#FEF6EC',
     borderRadius: R.md, padding: 10, marginBottom: 10,
-    borderWidth: 1, borderColor: 'rgba(178,63,44,0.22)',
+    borderWidth: 1, borderColor: 'rgba(193,140,60,0.22)',
   },
   productRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   thumb: {

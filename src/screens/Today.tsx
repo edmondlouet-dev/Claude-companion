@@ -13,20 +13,22 @@ import { FlutedGlass } from '../components/FlutedGlass';
 import { LiveActivityWidget } from '../components/LiveActivityWidget';
 import { AmbientModeOverlay, type AmbientStep } from '../components/AmbientModeOverlay';
 import type { ARMotion } from '../components/ARSculptOverlay';
-import { useStore } from '../store';
+import { useStore, type SkinScores } from '../store';
 import { buildRoutine, routineGaps, STEP_LABEL, type ProductCategory } from '../products';
 import { getRitual, adaptRoutineForRitual } from '../rituals';
 import { C, R, T, S } from '../tokens';
 
-const METRICS = [
-  { key: 'overall', value: '78', label: 'Overall',   dot: 'good' as const },
-  { key: 'acne',    value: '64', label: 'Acne',      dot: 'warn' as const },
-  { key: 'hydro',   value: '82', label: 'Hydration', dot: 'good' as const },
-  { key: 'tone',    value: '71', label: 'Tone',      dot: 'good' as const },
-  { key: 'pore',    value: '69', label: 'Pores',     dot: 'good' as const },
-  { key: 'red',     value: '88', label: 'Calm',      dot: 'good' as const },
-  { key: 'oil',     value: '55', label: 'Oil',       dot: 'warn' as const },
-  { key: 'tex',     value: '74', label: 'Texture',   dot: 'good' as const },
+// Maps each score chip to a field on the scan result so the strip reflects the
+// real last scan and can be compared against the previous one.
+const SCORE_FIELDS: { key: string; label: string; field: keyof SkinScores }[] = [
+  { key: 'overall', label: 'Overall',   field: 'overall' },
+  { key: 'acne',    label: 'Acne',      field: 'acne' },
+  { key: 'hydro',   label: 'Hydration', field: 'hydration' },
+  { key: 'tone',    label: 'Tone',      field: 'tone' },
+  { key: 'pore',    label: 'Pores',     field: 'pores' },
+  { key: 'red',     label: 'Calm',      field: 'redness' },
+  { key: 'oil',     label: 'Oil',       field: 'oil' },
+  { key: 'tex',     label: 'Texture',   field: 'texture' },
 ];
 
 const WHY: Partial<Record<string, string>> = {
@@ -59,7 +61,20 @@ const BROWSE_URLS: Record<ProductCategory, string> = {
   exfoliant:   'https://www.sephora.com/search?keyword=chemical+exfoliant+BHA+AHA',
 };
 
-function getDailyInsight(scores: any, uv: number, tempUnit: string): string {
+const CONCERN_INSIGHT: Record<string, string> = {
+  acne:      'Your goal is clearer skin — a BHA exfoliant 2–3×/week keeps pores clear; pair with niacinamide AM.',
+  dryness:   'You flagged dryness — layer hyaluronic acid on damp skin, then seal with a ceramide moisturiser.',
+  darkspots: 'For dark spots, Vitamin C every morning under SPF fades pigment faster than either alone.',
+  texture:   'For texture & pores, alternate a gentle exfoliant with retinoid nights — never the same evening.',
+  redness:   'You flagged sensitivity — keep it barrier-first: ceramides, centella, and fragrance-free formulas.',
+  aging:     'For fine lines, a nightly retinoid plus daily SPF is the most evidence-backed pairing there is.',
+};
+
+function getDailyInsight(scores: any, uv: number, tempUnit: string, concern?: string): string {
+  // A flagged concern from onboarding leads when the scan looks otherwise stable.
+  if (concern && CONCERN_INSIGHT[concern] && (!scores || scores.overall >= 72)) {
+    return CONCERN_INSIGHT[concern]!;
+  }
   if (!scores) return `UV ${uv} today — your SPF is your single most important product.`;
   if (scores.hydration < 70)
     return `Hydration ${scores.hydration} — apply HA serum within 60 sec of cleansing. Damp skin absorbs 2x more.`;
@@ -75,15 +90,16 @@ function getDailyInsight(scores: any, uv: number, tempUnit: string): string {
 export const Today: React.FC = () => {
   const insets = useSafeAreaInsets();
   const {
-    owned, streak, activeRitual, user, lastScores, temperatureUnit,
-    ritualStreaks, completeDailyRitual,
+    owned, streak, activeRitual, user, lastScores, prevScores, temperatureUnit,
+    ritualStreaks, completeDailyRitual, logRoutineUsage,
+    userShelf, faceMetrics, questionnaireAnswers,
   } = useStore();
   const [activeMetric, setActiveMetric] = useState('overall');
   const [quickAdd, setQuickAdd]         = useState('');
   const [showAmbient, setShowAmbient]   = useState(false);
 
   const routine = buildRoutine(owned, 'AM');
-  const gaps    = routineGaps(owned);
+  const gaps    = routineGaps(owned, questionnaireAnswers.concern);
 
   const ritual   = activeRitual ? getRitual(activeRitual) : undefined;
   const tomorrow = activeRitual ? adaptRoutineForRitual(activeRitual, owned) : [];
@@ -112,7 +128,29 @@ export const Today: React.FC = () => {
   const UV = 6;
   const tempC = 23;
   const tempDisplay = temperatureUnit === 'F' ? `${Math.round(tempC * 9 / 5 + 32)}°F` : `${tempC}°C`;
-  const insight = getDailyInsight(lastScores, UV, temperatureUnit);
+  const insight = getDailyInsight(lastScores, UV, temperatureUnit, questionnaireAnswers.concern[0]);
+
+  // Score chips reflect the real last scan; tapping one reveals the delta.
+  const metrics = SCORE_FIELDS.map(f => {
+    const v = lastScores ? lastScores[f.field] : 0;
+    return { key: f.key, value: String(v), label: f.label, dot: (v < 65 ? 'warn' : 'good') as 'warn' | 'good' };
+  });
+  const selField = SCORE_FIELDS.find(f => f.key === activeMetric) ?? SCORE_FIELDS[0]!;
+  const curVal   = lastScores ? lastScores[selField.field] : 0;
+  const prevVal  = prevScores ? prevScores[selField.field] : curVal;
+  const delta    = curVal - prevVal;
+  const trend    = delta > 1 ? 'improving' : delta < -1 ? 'softening' : 'holding steady';
+  const trendColor = delta > 1 ? C.sage : delta < -1 ? C.warn : C.ink3;
+
+  // Cosmetic Conflict Harmonizer — surfaces on the dashboard the moment a shelf
+  // product's actives clash with the barrier read from the latest scan.
+  const HARSH = ['retinol', 'retinyl', 'tretinoin', 'adapalene', 'glycolic acid',
+    'salicylic acid', 'benzoyl peroxide', 'ascorbic acid', 'vitamin c', 'lactic acid'];
+  const barrierFatigued = /sensiti|fatig/i.test(faceMetrics.barrierStatus);
+  const conflictProduct = barrierFatigued
+    ? userShelf.find(p => p.ingredients.some(i => HARSH.some(h => i.toLowerCase().includes(h))))
+    : undefined;
+  const conflictActive = conflictProduct?.ingredients.find(i => HARSH.some(h => i.toLowerCase().includes(h)));
 
   return (
     <View style={styles.root}>
@@ -125,6 +163,7 @@ export const Today: React.FC = () => {
           ritualKey={activeRitual ?? undefined}
           onComplete={() => {
             if (activeRitual) completeDailyRitual(activeRitual);
+            logRoutineUsage();            // draw down the shelf for products used
             setShowAmbient(false);
           }}
           onDismiss={() => setShowAmbient(false)}
@@ -209,14 +248,37 @@ export const Today: React.FC = () => {
           </FlutedGlass>
         )}
 
-        {/* Score strip */}
+        {/* Score strip — tap a chip to see how it moved since the last scan */}
         <View style={styles.sectionHeader}>
           <Text style={T.kicker}>SCORES</Text>
-          <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>last scan · 18h ago</Text>
+          <Text style={[T.kicker, { color: C.ink4, fontSize: 8 }]}>TAP FOR CHANGE</Text>
         </View>
-        <View style={{ marginBottom: 16 }}>
-          <MetricStrip metrics={METRICS} active={activeMetric} onPick={setActiveMetric} />
+        <View style={{ marginBottom: 10 }}>
+          <MetricStrip metrics={metrics} active={activeMetric} onPick={setActiveMetric} />
         </View>
+        <FlutedGlass padding={12} style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={[T.num, { fontSize: 28, fontWeight: '700', color: C.ink }]}>{curVal}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[T.body, { fontWeight: '600', fontSize: 13 }]}>{selField.label}</Text>
+              <Text style={[T.bodySm, { color: trendColor, fontSize: 12, marginTop: 1 }]}>
+                {delta > 0 ? '▲' : delta < 0 ? '▼' : '■'} {delta > 0 ? '+' : ''}{delta} since last scan · {trend}
+              </Text>
+            </View>
+          </View>
+        </FlutedGlass>
+
+        {/* Cosmetic Conflict Harmonizer banner */}
+        {conflictProduct && conflictActive && (
+          <FlutedGlass padding={12} style={[styles.harmonizer, { marginBottom: 16 }]}>
+            <Text style={[T.kicker, { color: C.warn, marginBottom: 4 }]}>✦ CONFLICT HARMONIZER</Text>
+            <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>
+              <Text style={{ fontWeight: '600' }}>{conflictProduct.name}</Text> has{' '}
+              <Text style={{ fontWeight: '600' }}>{conflictActive}</Text>. Your barrier reads{' '}
+              {faceMetrics.barrierStatus.toLowerCase()} — swap in your Hyaluronic Acid tonight and ease this back in once calm.
+            </Text>
+          </FlutedGlass>
+        )}
 
         {/* Routine */}
         <View style={styles.sectionHeader}>
@@ -253,7 +315,7 @@ export const Today: React.FC = () => {
         {ritualMastered && ritual ? (
           <TouchableOpacity
             style={styles.concludeBtn}
-            onPress={() => completeDailyRitual(activeRitual!)}
+            onPress={() => { completeDailyRitual(activeRitual!); logRoutineUsage(); }}
             activeOpacity={0.85}
           >
             <Text style={[T.button, { color: C.bg, fontSize: 14 }]}>
@@ -387,6 +449,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16, alignItems: 'center',
     marginBottom: 14,
   },
+  harmonizer: { borderColor: 'rgba(193,140,60,0.40)', backgroundColor: '#FEF6EC' },
   gapDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.warn, flexShrink: 0 },
   browseBtn: {
     borderWidth: 1, borderColor: C.accent + '80',

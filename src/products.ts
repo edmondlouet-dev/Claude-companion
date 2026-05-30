@@ -96,7 +96,16 @@ export function buildRoutine(owned: string[], when: Tone): RoutineStep[] {
   return result;
 }
 
-export function routineGaps(owned: string[]): GapWarning[] {
+// Concerns from onboarding map to the active a routine should add to address them.
+const CONCERN_GAP: Record<string, GapWarning> = {
+  acne:      { key: 'exfoliant', label: 'BHA Exfoliant',    reason: 'You flagged breakouts — salicylic acid clears pores and cuts comedones.' },
+  texture:   { key: 'exfoliant', label: 'Gentle Exfoliant', reason: 'For texture & pores, a PHA/AHA 2×/week smooths the surface.' },
+  darkspots: { key: 'antiox',    label: 'Vitamin C Serum',  reason: 'For dark spots, morning Vitamin C fades pigment under SPF.' },
+  aging:     { key: 'retinoid',  label: 'Retinoid',         reason: 'For fine lines, a nightly retinoid is the most evidence-backed active.' },
+  dryness:   { key: 'serum',     label: 'Hydrating Serum',  reason: 'You flagged dryness — a hyaluronic acid serum layers in moisture.' },
+};
+
+export function routineGaps(owned: string[], concerns: string[] = []): GapWarning[] {
   const cats = owned
     .map(n => CATALOG[n]?.category)
     .filter(Boolean) as ProductCategory[];
@@ -108,5 +117,11 @@ export function routineGaps(owned: string[]): GapWarning[] {
     gaps.push({ key: 'moisturizer', label: 'Moisturizer', reason: 'Locks in hydration and strengthens the barrier.' });
   if (!cats.some(c => c === 'spf'))
     gaps.push({ key: 'spf', label: 'Broad-Spectrum SPF', reason: 'UV is the #1 cause of premature aging. Non-negotiable.' });
+
+  // Personalised gaps from the onboarding concerns — only if not already owned.
+  for (const c of concerns) {
+    const g = CONCERN_GAP[c];
+    if (g && !cats.includes(g.key) && !gaps.some(x => x.key === g.key)) gaps.push(g);
+  }
   return gaps;
 }

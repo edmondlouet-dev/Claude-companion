@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions,
+  ActivityIndicator, Alert,
 } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Settings as SettingsIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { MetricStrip } from '../components/MetricStrip';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { FaceLogo } from '../components/FaceLogo';
 import { PremiumModal } from '../components/PremiumModal';
+import { analyzeStructuralFrame, GEMINI_LIVE } from '../services/gemini';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
 
@@ -19,36 +23,64 @@ function isWithin7Days(dateStr: string | null): boolean {
 const { width: W } = Dimensions.get('window');
 const DIAGRAM_SIZE = Math.min(W - S.gutter * 2, 280);
 
-const LM_METRICS = [
-  { key: 'overall', value: '7.4', label: 'Overall', dot: 'good' as const },
-  { key: 'jaw',     value: '6.8', label: 'Jaw',     dot: 'good' as const },
-  { key: 'canthal', value: '6.4', label: 'Canthal', dot: 'warn' as const },
-  { key: 'midface', value: '6.9', label: 'Midface', dot: 'warn' as const },
-  { key: 'skin',    value: '7.8', label: 'Skin',    dot: 'good' as const },
-];
+type ScanStep = 'idle' | 'camera' | 'scanning' | 'done';
 
-export const Proportions: React.FC = () => {
+interface Props { onOpenSettings?: () => void; }
+
+export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
   const insets = useSafeAreaInsets();
   const {
     structural, userProfile, usageCounters,
-    recordStructuralScan, showPremiumModal, openPremiumModal, dismissPremiumModal,
+    updateMetrics, recordStructuralScan, showPremiumModal, openPremiumModal, dismissPremiumModal,
     setPremiumStatus,
   } = useStore();
+  const [permission, requestPermission] = useCameraPermissions();
   const [active, setActive]     = useState('overall');
-  const [analysed, setAnalysed] = useState(false);
+  const [scanStep, setScanStep] = useState<ScanStep>('idle');
+  const cameraRef = useRef<any>(null);
 
   const locked = !userProfile.isPremium &&
     usageCounters.structuralScansThisWeek >= 1 &&
     isWithin7Days(usageCounters.lastStructuralScanDate);
 
-  const handleAnalyse = () => {
-    if (locked) { openPremiumModal(); return; }
-    recordStructuralScan();
-    setAnalysed(true);
-  };
-
   const tiltLabel = structural.canthalTilt < 0 ? 'Slightly Downward'
     : structural.canthalTilt > 0 ? 'Positive' : 'Neutral';
+
+  // Live metrics drive the strip so a fresh scan visibly changes the numbers.
+  const LM_METRICS = [
+    { key: 'overall', value: '7.4', label: 'Overall', dot: 'good' as const },
+    { key: 'tilt',    value: `${structural.canthalTilt}°`, label: 'Tilt', dot: (structural.canthalTilt < 0 ? 'warn' : 'good') as 'warn' | 'good' },
+    { key: 'midface', value: structural.midfaceRatio.toFixed(2), label: 'Midface', dot: (structural.midfaceRatio > 1.08 ? 'warn' : 'good') as 'warn' | 'good' },
+    { key: 'fluid',   value: structural.fluidRetention, label: 'Fluid', dot: (structural.fluidRetention === 'Low' ? 'good' : 'warn') as 'warn' | 'good' },
+    { key: 'skin',    value: '7.8', label: 'Skin', dot: 'good' as const },
+  ];
+
+  const startScan = async () => {
+    if (locked) { openPremiumModal(); return; }
+    if (!permission?.granted) {
+      const res = await requestPermission();
+      if (!res.granted) { Alert.alert('Camera needed', 'Allow camera access to scan your facial structure.'); return; }
+    }
+    setScanStep('camera');
+  };
+
+  const capture = async () => {
+    setScanStep('scanning');
+    try {
+      let base64 = '';
+      if (permission?.granted && cameraRef.current) {
+        const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6 });
+        base64 = photo.base64 ?? '';
+      }
+      const result = await analyzeStructuralFrame(base64);
+      updateMetrics(result);          // canthalTilt, midfaceRatio, fluidRetention, barrierStatus
+      recordStructuralScan();
+      setScanStep('done');
+    } catch {
+      setScanStep('idle');
+      Alert.alert('Scan failed', 'Please try again.');
+    }
+  };
 
   const insights = [
     {
@@ -106,8 +138,8 @@ export const Proportions: React.FC = () => {
               beyond skin · ratios · angles · improvements
             </Text>
           </View>
-          <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.7}>
-            <Text style={{ fontSize: 18, color: C.ink3 }}>⚙</Text>
+          <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.7} onPress={onOpenSettings}>
+            <SettingsIcon size={20} strokeWidth={1.3} color={C.ink3} />
           </TouchableOpacity>
         </View>
 
@@ -115,16 +147,45 @@ export const Proportions: React.FC = () => {
           <MetricStrip metrics={LM_METRICS} active={active} onPick={setActive} />
         </View>
 
-        {/* Face diagram — the Poreless logo mark */}
+        {/* Face diagram / live scan camera */}
         <FlutedGlass padding={16} mode="lookmax" style={{ marginBottom: 14 }}>
           <View style={styles.diagramWrap}>
-            <FaceLogo size={DIAGRAM_SIZE} color={C.ink2} strokeWidth={1.4} animated />
+            {scanStep === 'camera' || scanStep === 'scanning' ? (
+              <View style={styles.cameraBox}>
+                {permission?.granted ? (
+                  <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="front" />
+                ) : (
+                  <View style={styles.camPlaceholder}>
+                    <FaceLogo size={DIAGRAM_SIZE * 0.5} color={C.ink3} strokeWidth={0.8} />
+                  </View>
+                )}
+                {/* structural framing brackets */}
+                <View style={styles.frameCorner} />
+                <View style={[styles.frameCorner, styles.frameTR]} />
+                <View style={[styles.frameCorner, styles.frameBL]} />
+                <View style={[styles.frameCorner, styles.frameBR]} />
+                <View style={styles.scanStatus}>
+                  <Text style={[T.kicker, { color: 'white', fontSize: 9 }]}>
+                    {scanStep === 'scanning' ? '· mapping 68 landmarks ·' : '· centre your face · look ahead ·'}
+                  </Text>
+                </View>
+                {scanStep === 'scanning' && (
+                  <View style={styles.scanningOverlay}>
+                    <ActivityIndicator color={C.accent} size="large" />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <FaceLogo size={DIAGRAM_SIZE} color={C.ink2} strokeWidth={1.4} animated />
+            )}
           </View>
         </FlutedGlass>
 
         <View style={styles.footer}>
           <Text style={[T.kicker, { color: C.ink3 }]}>METRICS — OVERALL</Text>
-          <Text style={[T.kicker, { color: C.ink3 }]}>SCAN · 18H AGO</Text>
+          <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3 }]}>
+            {GEMINI_LIVE ? 'GEMINI · LIVE' : 'GEMINI · SIM'}
+          </Text>
         </View>
 
         <Text style={[T.kicker, { marginBottom: 8, marginTop: 8 }]}>INSIGHTS · FROM YOUR SCAN</Text>
@@ -140,25 +201,39 @@ export const Proportions: React.FC = () => {
           </FlutedGlass>
         ))}
 
-        {/* Structural scan CTA — gated for second scan within 7 days */}
-        <TouchableOpacity
-          style={[styles.analyseBtn, locked && styles.analyseBtnLocked]}
-          onPress={handleAnalyse}
-          activeOpacity={0.85}
-        >
-          <Text style={[T.button, { color: locked ? C.ink3 : C.bg, fontSize: 13 }]}>
-            {analysed
-              ? '✓  Structural analysis complete'
-              : locked
-                ? '⊘  Unlock structural rescan · Premium'
-                : '⊙  Analyse facial structure'}
-          </Text>
-          {locked && (
-            <Text style={[T.kicker, { color: C.ink4, marginTop: 5, fontSize: 9 }]}>
-              Free scan used · resets in 7 days · or unlock Premium
+        {/* Scan CTA — camera flow, gated for a second scan within 7 days */}
+        {scanStep === 'camera' ? (
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <TouchableOpacity style={[styles.analyseBtn, { flex: 1, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line2 }]}
+              onPress={() => setScanStep('idle')} activeOpacity={0.8}>
+              <Text style={[T.button, { color: C.ink3, fontSize: 13 }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.analyseBtn, { flex: 2 }]} onPress={capture} activeOpacity={0.85}>
+              <Text style={[T.button, { color: C.bg, fontSize: 13 }]}>⊙  Capture structure</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.analyseBtn, locked && styles.analyseBtnLocked, scanStep === 'scanning' && { backgroundColor: C.ink3 }]}
+            onPress={scanStep === 'scanning' ? undefined : startScan}
+            activeOpacity={0.85}
+          >
+            <Text style={[T.button, { color: locked ? C.ink3 : C.bg, fontSize: 13 }]}>
+              {scanStep === 'scanning'
+                ? '⏳  Analysing structure…'
+                : scanStep === 'done'
+                  ? '✓  Scan complete · scan again'
+                  : locked
+                    ? '⊘  Unlock structural rescan · Premium'
+                    : '⊙  Scan facial structure'}
             </Text>
-          )}
-        </TouchableOpacity>
+            {locked && scanStep !== 'scanning' && (
+              <Text style={[T.kicker, { color: C.ink4, marginTop: 5, fontSize: 9 }]}>
+                Free scan used · resets in 7 days · or unlock Premium
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       <PremiumModal
@@ -176,8 +251,25 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: S.gutter },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  settingsBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  settingsBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   diagramWrap: { alignItems: 'center', backgroundColor: '#FAF8F3', borderRadius: R.md, paddingVertical: 12 },
+  cameraBox: {
+    width: DIAGRAM_SIZE, height: DIAGRAM_SIZE, borderRadius: R.md,
+    overflow: 'hidden', backgroundColor: '#E8DDD0', position: 'relative',
+  },
+  camPlaceholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0EAE0' },
+  frameCorner: {
+    position: 'absolute', top: 14, left: 14, width: 22, height: 22,
+    borderTopWidth: 2, borderLeftWidth: 2, borderColor: 'rgba(255,255,255,0.85)',
+  },
+  frameTR: { left: undefined, right: 14, borderLeftWidth: 0, borderRightWidth: 2 },
+  frameBL: { top: undefined, bottom: 14, borderTopWidth: 0, borderBottomWidth: 2 },
+  frameBR: { top: undefined, left: undefined, right: 14, bottom: 14, borderTopWidth: 0, borderLeftWidth: 0, borderRightWidth: 2, borderBottomWidth: 2 },
+  scanStatus: {
+    position: 'absolute', top: 12, alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: R.pill,
+  },
+  scanningOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(251,250,247,0.35)', alignItems: 'center', justifyContent: 'center' },
   footer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   insightTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.pill, marginLeft: 8 },
   analyseBtn: {

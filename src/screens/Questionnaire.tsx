@@ -102,7 +102,7 @@ const STEPS: Step[] = [
 
 export const Questionnaire: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { completeQuestionnaire } = useStore();
+  const { completeQuestionnaire, saveQuestionnaire } = useStore();
   const [step, setStep] = useState(0);
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -136,6 +136,15 @@ export const Questionnaire: React.FC = () => {
       Animated.timing(slideAnim, { toValue: -30, duration: 160, useNativeDriver: true }),
     ]).start(() => {
       if (isLast) {
+        // Persist answers so onboarding actually shapes the routine & insights.
+        saveQuestionnaire({
+          goals:     selections.goals     ?? [],
+          concern:   selections.concern   ?? [],
+          skintype:  selections.skintype  ?? [],
+          frequency: selections.frequency ?? [],
+          age:       selections.age       ?? [],
+          source:    selections.source    ?? [],
+        });
         completeQuestionnaire();
         return;
       }

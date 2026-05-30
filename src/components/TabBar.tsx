@@ -51,9 +51,26 @@ const TabIcon: React.FC<{ name: TabKey; active: boolean }> = ({ name, active }) 
   return <Icon size={24} strokeWidth={1.2} color={color} />;
 };
 
+const RING_SIZE = 34;
+const H_PAD = 8;
+
 export const TabBar: React.FC<Props> = ({ active, onChange, mode = 'normal' }) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+
+  const tabW = (width - H_PAD * 2) / TABS.length;
+  const activeIndex = Math.max(0, TABS.findIndex(t => t.key === active));
+
+  // Single ring that slides to the active tab and wraps its icon.
+  const ringX = useRef(new Animated.Value(0)).current;
+  const ringFor = (i: number) => H_PAD + i * tabW + tabW / 2 - RING_SIZE / 2;
+  useEffect(() => {
+    Animated.spring(ringX, {
+      toValue: ringFor(activeIndex),
+      useNativeDriver: true,
+      damping: 16, stiffness: 180, mass: 0.7,
+    }).start();
+  }, [activeIndex, tabW]);
 
   const shimmerX = useRef(new Animated.Value(-80)).current;
   useEffect(() => {
@@ -95,11 +112,16 @@ export const TabBar: React.FC<Props> = ({ active, onChange, mode = 'normal' }) =
       {/* Top hairline */}
       <View style={styles.topBorder} pointerEvents="none" />
 
+      {/* Sliding active ring — wraps the active icon and transitions between tabs */}
+      <Animated.View
+        style={[styles.glowRing, { transform: [{ translateX: ringX }] }]}
+        pointerEvents="none"
+      />
+
       {TABS.map(tab => {
         const isActive = tab.key === active;
         return (
           <TouchableOpacity key={tab.key} style={styles.tab} onPress={() => onChange(tab.key)} activeOpacity={0.75}>
-            {isActive && <View style={styles.glowRing} />}
             <View style={styles.iconWrap}>
               <TabIcon name={tab.key} active={isActive} />
               <View style={styles.lensOverlay} pointerEvents="none" />
@@ -156,8 +178,10 @@ const styles = StyleSheet.create({
     top: 3, left: 3,
   },
   glowRing: {
-    position: 'absolute', top: 4, width: 32, height: 32, borderRadius: 16,
-    backgroundColor: 'rgba(194,119,45,0.10)',
-    borderWidth: 1, borderColor: 'rgba(194,119,45,0.20)',
+    position: 'absolute', top: 7, left: 0,
+    width: RING_SIZE, height: RING_SIZE, borderRadius: RING_SIZE / 2,
+    backgroundColor: 'rgba(194,119,45,0.14)',
+    borderWidth: 1, borderColor: 'rgba(194,119,45,0.34)',
+    zIndex: 2,
   },
 });

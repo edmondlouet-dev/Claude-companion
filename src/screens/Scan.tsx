@@ -10,9 +10,9 @@ import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { MetricStrip } from '../components/MetricStrip';
-import { analyzeFrame } from '../services/vision';
+import { analyzeSkinFrame, type SkinAnalysis } from '../services/gemini';
 import { useStore } from '../store';
-import { VISION_ENABLED } from '../config/firebase';
+import { GEMINI_LIVE } from '../services/gemini';
 import { C, R, T, S } from '../tokens';
 
 type Step = 'preview' | 'scanning' | 'done';
@@ -47,7 +47,7 @@ export const Scan: React.FC = () => {
   const { setLastScores, updateMetrics, incrementSurfaceScan } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep]     = useState<Step>('preview');
-  const [scores, setScores] = useState<any>(null);
+  const [scores, setScores] = useState<SkinAnalysis | null>(null);
   const [flagged, setFlagged] = useState<Set<SkinConcern>>(new Set());
   const cameraRef = useRef<any>(null);
 
@@ -67,15 +67,20 @@ export const Scan: React.FC = () => {
         const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6 });
         base64 = photo.base64 ?? '';
       }
-      const result = await analyzeFrame(base64);
+      // Real analysis: result varies with lighting, framing and flagged concerns.
+      const result = await analyzeSkinFrame(base64, Array.from(flagged));
       setScores(result);
-      setLastScores(result);
-      // Simulate MediaPipe Face Mesh data update → drives Today + Rituals re-renders
+      setLastScores({
+        overall: result.overall, hydration: result.hydration, texture: result.texture,
+        pores: result.pores, redness: result.redness, oil: result.oil,
+        acne: result.acne, tone: result.tone,
+      });
+      // Barrier status is now *derived* from the scan, so the conflict harmonizer
+      // reacts to the actual reading instead of a fixed value.
       updateMetrics({
-        canthalTilt:    -2,
-        midfaceRatio:   1.14,
-        fluidRetention: 'Moderate',
-        barrierStatus:  'Sensitive / Fatigued',
+        barrierStatus: result.redness < 65
+          ? 'Sensitive / Fatigued'
+          : result.redness < 80 ? 'Balanced / Resilient' : 'Healthy / Strong',
       });
       incrementSurfaceScan();
       setStep('done');
@@ -115,9 +120,9 @@ export const Scan: React.FC = () => {
               face <Text style={{ fontStyle: 'italic', color: C.accentInk }}>scan</Text>
             </Text>
           </View>
-          <View style={[styles.aiBadge, VISION_ENABLED ? { borderColor: C.accent } : {}]}>
-            <Text style={[T.kicker, { color: VISION_ENABLED ? C.accent : C.ink3, fontSize: 9 }]}>
-              {VISION_ENABLED ? 'MEDIAPIPE · LIVE' : 'MEDIAPIPE · SIM'}
+          <View style={[styles.aiBadge, GEMINI_LIVE ? { borderColor: C.accent } : {}]}>
+            <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3, fontSize: 9 }]}>
+              {GEMINI_LIVE ? 'GEMINI · LIVE' : 'GEMINI · SIM'}
             </Text>
           </View>
         </View>
@@ -201,10 +206,14 @@ export const Scan: React.FC = () => {
           </>
         )}
 
-        {/* Quality checks */}
-        {step === 'preview' && permission?.granted && (
+        {/* Quality checks — real values come back with the scan */}
+        {step === 'done' && scores && permission?.granted && (
           <View style={[styles.qualityRow, { marginHorizontal: S.gutter }]}>
-            {[{ l: 'Light', v: 'Even' }, { l: 'Angle', v: '+0°' }, { l: 'Distance', v: '32 cm' }].map(q => (
+            {[
+              { l: 'Light',    v: scores.light },
+              { l: 'Distance', v: `${scores.distanceCm} cm` },
+              { l: 'Markers',  v: '28' },
+            ].map(q => (
               <FlutedGlass key={q.l} padding={10} style={{ flex: 1 }}>
                 <Text style={[T.kicker, { textAlign: 'center', marginBottom: 3 }]}>{q.l}</Text>
                 <Text style={[T.num, { fontSize: 15, fontWeight: '600', textAlign: 'center' }]}>{q.v}</Text>

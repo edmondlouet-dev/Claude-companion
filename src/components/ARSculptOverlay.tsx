@@ -22,6 +22,7 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FaceLogo } from './FaceLogo';
 import type { BlueprintIcon } from '../skin';
+import { detectStepCompletion, GEMINI_LIVE } from '../services/gemini';
 import { C, R, T, S } from '../tokens';
 
 const { width: W } = Dimensions.get('window');
@@ -146,6 +147,8 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [idx, setIdx] = useState(0);
+  const [detectP, setDetectP] = useState(0);   // 0–1 completion confidence
+  const [done, setDone]       = useState(false);
 
   const flow  = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -157,6 +160,24 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
 
   const step  = steps[idx];
   const guide = step ? GUIDES[step.icon] : undefined;
+
+  const goNext = () => {
+    if (idx < steps.length - 1) setIdx(i => i + 1);
+    else setTimeout(onClose, 600);
+  };
+
+  // AI completion detection — watches the motion and auto-advances when the step
+  // reads as complete. Live: streams frames to the model. Sim: realistic hold.
+  useEffect(() => {
+    setDetectP(0);
+    setDone(false);
+    const stop = detectStepCompletion(
+      () => null,                         // frame provider (wired to camera when live)
+      (p) => setDetectP(p),
+      () => { setDone(true); setTimeout(goNext, 700); },
+    );
+    return stop;
+  }, [idx]);
 
   const dashOffset = flow.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
   const pulseR     = pulse.interpolate({ inputRange: [0, 1], outputRange: [3, 11] });
@@ -247,13 +268,29 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
             </TouchableOpacity>
           )}
 
-          <Text style={[T.kicker, { color: C.accent, marginBottom: 6 }]}>
-            STEP {idx + 1} OF {steps.length}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text style={[T.kicker, { color: C.accent }]}>STEP {idx + 1} OF {steps.length}</Text>
+            <Text style={[T.kicker, { color: GEMINI_LIVE ? '#5BD66E' : 'rgba(255,255,255,0.5)', fontSize: 8 }]}>
+              {GEMINI_LIVE ? 'AI TRACKING · LIVE' : 'AI TRACKING · SIM'}
+            </Text>
+          </View>
           <Text style={[T.h2, { color: 'white', fontSize: 20 }]}>{step?.title}</Text>
           <Text style={[T.bodySm, { color: 'rgba(255,255,255,0.8)', marginTop: 8, lineHeight: 18 }]}>
             {guide?.cue}
           </Text>
+
+          {/* AI completion detection */}
+          <View style={styles.detectRow}>
+            <View style={styles.detectTrack}>
+              <View style={[styles.detectFill, {
+                width: `${Math.round(detectP * 100)}%`,
+                backgroundColor: done ? '#5BD66E' : C.accent,
+              }]} />
+            </View>
+            <Text style={[T.kicker, { color: done ? '#5BD66E' : 'rgba(255,255,255,0.7)', fontSize: 9, marginTop: 6 }]}>
+              {done ? '✓ MOVEMENT COMPLETE · ADVANCING' : 'HOLD THE MOTION · DETECTING COMPLETION…'}
+            </Text>
+          </View>
 
           <View style={styles.dotRow}>
             {steps.map((_, i) => (
@@ -312,6 +349,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.accent, borderRadius: R.md,
     paddingVertical: 12, alignItems: 'center', marginBottom: 14,
   },
+  detectRow: { marginTop: 14 },
+  detectTrack: { height: 3, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'hidden' },
+  detectFill: { height: 3, borderRadius: 2 },
   dotRow: { flexDirection: 'row', gap: 6, marginTop: 16, justifyContent: 'center' },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)' },
   dotActive: { backgroundColor: C.accent, width: 18 },

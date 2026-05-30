@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, ChevronRight, ScanFace } from 'lucide-react-native';
 import { ARSculptOverlay, type ARMotion, type ARStep } from './ARSculptOverlay';
 import { C, R, T, S } from '../tokens';
 
-const { width: W } = Dimensions.get('window');
 const STEP_DURATION = 30; // fallback seconds per step
-const BAR_W = W - S.gutter * 2 - 32;
 
 export interface AmbientStep {
   label: string;
@@ -30,8 +28,8 @@ export const AmbientModeOverlay: React.FC<Props> = ({
 }) => {
   const [stepIdx, setStepIdx]         = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [progress, setProgress]       = useState(0);   // 0–1, drives the bar
   const [showAR, setShowAR]           = useState(false);
-  const progressAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim     = useRef(new Animated.Value(0)).current;
   const elapsedRef   = useRef(0);   // ms elapsed in the current step
 
@@ -46,13 +44,13 @@ export const AmbientModeOverlay: React.FC<Props> = ({
   // Reset the clock whenever the step changes.
   useEffect(() => {
     elapsedRef.current = 0;
-    progressAnim.setValue(0);
+    setProgress(0);
     setSecondsLeft(Math.ceil(stepSecs));
   }, [stepIdx]);
 
-  // Manual, pausable tick loop. Drives the bar (progressAnim) AND the countdown
-  // from one accumulator, so they always agree. Pauses while the AR guide is
-  // open (re-runs on showAR) and resumes from where it left off — no reset.
+  // One pausable tick loop drives BOTH the bar (progress) and the countdown from
+  // a single accumulator, so they can never drift apart. Pauses while the AR
+  // guide is open and resumes from where it left off — no reset.
   useEffect(() => {
     if (!current || showAR) return;          // paused while AR is open
     let last = Date.now();
@@ -62,7 +60,7 @@ export const AmbientModeOverlay: React.FC<Props> = ({
       elapsedRef.current += now - last;
       last = now;
       const p = Math.min(1, elapsedRef.current / total);
-      progressAnim.setValue(p);
+      setProgress(p);
       setSecondsLeft(Math.max(0, Math.ceil((total - elapsedRef.current) / 1000)));
       if (p >= 1) {
         clearInterval(id);
@@ -82,11 +80,6 @@ export const AmbientModeOverlay: React.FC<Props> = ({
       return next;
     });
   };
-
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, BAR_W],
-  });
 
   const arSteps: ARStep[] = current
     ? [{ icon: current.motion ?? 'apply', title: `Apply · ${current.label}`, body: current.productName }]
@@ -118,7 +111,7 @@ export const AmbientModeOverlay: React.FC<Props> = ({
 
       {/* Progress track */}
       <View style={styles.progressTrack}>
-        <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
+        <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
       </View>
 
       {/* Step dots */}

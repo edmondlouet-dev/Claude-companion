@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Animated, Dimensions, LayoutAnimation, Platform, UIManager,
+  Animated, Dimensions, LayoutAnimation, Platform, UIManager, Modal,
 } from 'react-native';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -138,10 +138,29 @@ interface Props {
   onSettings?: () => void;
 }
 
+type InfoModal = 'skin' | 'privacy' | 'about' | null;
+
+const SKINTYPE_LABEL: Record<string, string> = {
+  oily: 'Oily', dry: 'Dry', combo: 'Combination', normal: 'Normal', sensitive: 'Sensitive',
+};
+const CONCERN_LABEL: Record<string, string> = {
+  acne: 'Acne & breakouts', dryness: 'Dryness', darkspots: 'Dark spots',
+  texture: 'Texture & pores', redness: 'Redness & sensitivity', aging: 'Fine lines & aging',
+};
+
+const InfoRow: React.FC<{ label: string; value: string; last?: boolean }> = ({ label, value, last }) => (
+  <View style={[{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 9, gap: 16 },
+    !last && { borderBottomWidth: 1, borderBottomColor: C.line }]}>
+    <Text style={[T.bodySm, { color: C.ink3 }]}>{label}</Text>
+    <Text style={[T.bodySm, { color: C.ink, fontWeight: '600', flex: 1, textAlign: 'right' }]}>{value}</Text>
+  </View>
+);
+
 export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
   const insets = useSafeAreaInsets();
-  const { user, streak, lastScores, logout } = useStore();
+  const { user, streak, lastScores, logout, questionnaireAnswers, faceMetrics } = useStore();
   const [openScore, setOpenScore] = useState<string | null>(null);
+  const [infoModal, setInfoModal] = useState<InfoModal>(null);
 
   const displayName = user?.name ?? 'Alex Chen';
   const isPremium   = user?.premium ?? false;
@@ -286,6 +305,9 @@ export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
               onPress={() => {
                 if (item.screen === 'products') onProducts?.();
                 else if (item.screen === 'settings') onSettings?.();
+                else if (item.label === 'Skin profile')   setInfoModal('skin');
+                else if (item.label === 'Privacy')        setInfoModal('privacy');
+                else if (item.label === 'About Poreless') setInfoModal('about');
               }}
               activeOpacity={0.6}
             >
@@ -300,6 +322,88 @@ export const You: React.FC<Props> = ({ onProducts, onSettings }) => {
           <Text style={[T.button, { color: C.ink3 }]}>Sign out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Skin profile / Privacy / About — info sheets */}
+      <Modal
+        visible={infoModal !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setInfoModal(null)}
+      >
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <Text style={[T.h2, { fontSize: 18 }]}>
+              {infoModal === 'skin' ? 'Skin profile' : infoModal === 'privacy' ? 'Privacy' : 'About Poreless'}
+            </Text>
+            <TouchableOpacity onPress={() => setInfoModal(null)} activeOpacity={0.7}>
+              <Text style={[T.body, { color: C.ink3, fontSize: 18 }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: S.gutter, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+
+            {infoModal === 'skin' && (
+              <>
+                <Text style={[T.kicker, { marginBottom: 8 }]}>FROM YOUR ONBOARDING</Text>
+                <FlutedGlass padding={14} style={{ marginBottom: 12 }}>
+                  <InfoRow label="Skin type" value={(questionnaireAnswers.skintype.map(s => SKINTYPE_LABEL[s] ?? s).join(', ')) || 'Not set'} />
+                  <InfoRow label="Top concerns" value={(questionnaireAnswers.concern.map(c => CONCERN_LABEL[c] ?? c).join(', ')) || 'Not set'} />
+                  <InfoRow label="Goals" value={questionnaireAnswers.goals.length ? `${questionnaireAnswers.goals.length} selected` : 'Not set'} />
+                  <InfoRow label="Age range" value={questionnaireAnswers.age[0] ?? 'Not set'} last />
+                </FlutedGlass>
+                <Text style={[T.kicker, { marginBottom: 8 }]}>LATEST STRUCTURAL READ</Text>
+                <FlutedGlass padding={14}>
+                  <InfoRow label="Canthal tilt" value={`${faceMetrics.canthalTilt}°`} />
+                  <InfoRow label="Midface ratio" value={faceMetrics.midfaceRatio.toFixed(2)} />
+                  <InfoRow label="Fluid retention" value={faceMetrics.fluidRetention} />
+                  <InfoRow label="Barrier" value={faceMetrics.barrierStatus} last />
+                </FlutedGlass>
+                <Text style={[T.bodySm, { color: C.ink4, marginTop: 14, lineHeight: 17 }]}>
+                  Your profile shapes the routine, gaps, and daily brief. Re-run a scan any time to update it.
+                </Text>
+              </>
+            )}
+
+            {infoModal === 'privacy' && (
+              <>
+                {[
+                  ['On-device first', 'Camera frames for skin and structural analysis are processed for scoring and are not stored or uploaded unless you explicitly save them.'],
+                  ['Your data', 'Your shelf, scores, and profile live on this device. Sign-in details are used only to authenticate you.'],
+                  ['AI processing', 'When AI features are enabled, only the minimum needed (a frame or label text) is sent to the model to return your result.'],
+                  ['No selling', 'We never sell your data or skin metrics to third parties. Ever.'],
+                  ['Your control', 'You can remove any product, clear your shelf, or sign out at any time.'],
+                ].map(([h, b]) => (
+                  <FlutedGlass key={h} padding={14} style={{ marginBottom: 10 }}>
+                    <Text style={[T.body, { fontWeight: '600', marginBottom: 4 }]}>{h}</Text>
+                    <Text style={[T.bodySm, { color: C.ink3, lineHeight: 17 }]}>{b}</Text>
+                  </FlutedGlass>
+                ))}
+              </>
+            )}
+
+            {infoModal === 'about' && (
+              <>
+                <View style={{ alignItems: 'center', marginVertical: 16 }}>
+                  <FaceLogo size={56} color={C.ink2} strokeWidth={1.2} />
+                  <Text style={[T.h2, { marginTop: 10 }]}>Poreless</Text>
+                  <Text style={[T.kicker, { color: C.ink3, marginTop: 4 }]}>VERSION 1.0.0</Text>
+                </View>
+                <FlutedGlass padding={14} style={{ marginBottom: 10 }}>
+                  <Text style={[T.bodySm, { color: C.ink2, lineHeight: 18 }]}>
+                    Poreless blends editorial skincare with measurable analysis — surface skin scoring,
+                    facial proportions, ingredient conflict checks, and rituals drawn from traditions worldwide.
+                  </Text>
+                </FlutedGlass>
+                <FlutedGlass padding={14}>
+                  <Text style={[T.bodySm, { color: C.ink3, lineHeight: 17 }]}>
+                    Powered by peer-reviewed research. Not medical advice — always consult a dermatologist
+                    for clinical concerns.
+                  </Text>
+                </FlutedGlass>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -351,4 +455,10 @@ const styles = StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 14 },
   menuRowBorder: { borderBottomWidth: 1, borderBottomColor: C.line },
   signOut: { alignItems: 'center', paddingVertical: 16 },
+  sheet: { flex: 1, backgroundColor: C.bg, paddingTop: 16 },
+  sheetHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: S.gutter, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: C.line,
+  },
 });

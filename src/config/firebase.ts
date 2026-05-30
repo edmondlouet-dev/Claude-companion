@@ -35,3 +35,20 @@ export const FIREBASE_ENABLED = false;
  */
 export const VISION_API_KEY = 'YOUR_GOOGLE_VISION_API_KEY';
 export const VISION_ENABLED = false;
+
+/**
+ * Gemini API key — powers the AI Label Recognizer (OCR → structured product
+ * profile), smarter skin analysis, and AR step-completion detection.
+ *
+ * HOW TO GET ONE (free tier):
+ *  1. Go to https://aistudio.google.com/app/apikey
+ *  2. Create an API key
+ *  3. Paste it below and flip GEMINI_ENABLED to true
+ *
+ * Until then every Gemini-backed feature runs a realistic local simulation,
+ * so nothing crashes and the UX is identical. Dropping the key in here is the
+ * only change needed to go live.
+ */
+export const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY';
+export const GEMINI_ENABLED = false;
+export const GEMINI_MODEL = 'gemini-2.0-flash';

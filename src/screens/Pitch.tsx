@@ -30,8 +30,8 @@ const FEATURES = [
   },
   {
     Icon: ScanBarcode,
-    title: 'Barcode INCI scanner · free',
-    body: 'Scan any product barcode to pull its full ingredient list, and get a barrier-aware warning when a formula clashes with your last scan.',
+    title: 'AI label recognizer · free',
+    body: 'Photograph any product label and AI reads the brand, name and full ingredient list — with a barrier-aware warning when a formula clashes with your last scan.',
   },
   {
     Icon: Wind,

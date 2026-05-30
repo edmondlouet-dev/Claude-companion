@@ -33,6 +33,15 @@ interface UsageCounters {
   lastStructuralScanDate: string | null;
 }
 
+export interface QuestionnaireAnswers {
+  goals: string[];
+  concern: string[];
+  skintype: string[];
+  frequency: string[];
+  age: string[];
+  source: string[];
+}
+
 interface StoreState {
   authed: boolean;
   pitchSeen: boolean;
@@ -42,6 +51,7 @@ interface StoreState {
   streak: number;
   lastScan: Date | null;
   lastScores: SkinScores | null;
+  prevScores: SkinScores | null;   // the scan before lastScores — drives deltas
   mode: AppMode;
   activeRitual: string | null;
   temperatureUnit: 'C' | 'F';
@@ -53,6 +63,7 @@ interface StoreState {
   userShelf: ShelfProduct[];
   ritualStreaks: Record<string, number>;
   showPremiumModal: boolean;
+  questionnaireAnswers: QuestionnaireAnswers;
 }
 
 interface StoreComputed {
@@ -77,17 +88,25 @@ interface StoreActions {
   togglePassiveTracking: () => void;
   setPremiumStatus: (isPremium: boolean) => void;
   addBarcodeProduct: (product: ShelfProduct) => void;
+  removeBarcodeProduct: (id: string) => void;
+  logRoutineUsage: () => void;          // decrement shelf volumes on a completed routine
   completeDailyRitual: (ritualKey: string) => void;
   incrementSurfaceScan: () => void;
   recordStructuralScan: () => void;
+  saveQuestionnaire: (answers: QuestionnaireAnswers) => void;
   openPremiumModal: () => void;
   dismissPremiumModal: () => void;
 }
 
 type FullStore = StoreState & StoreActions & StoreComputed;
 
-const PITCH_KEY         = '@poreless_pitch_seen';
-const QUESTIONNAIRE_KEY = '@poreless_questionnaire_done';
+const PITCH_KEY          = '@poreless_pitch_seen';
+const QUESTIONNAIRE_KEY  = '@poreless_questionnaire_done';
+const ANSWERS_KEY        = '@poreless_questionnaire_answers';
+
+const EMPTY_ANSWERS: QuestionnaireAnswers = {
+  goals: [], concern: [], skintype: [], frequency: [], age: [], source: [],
+};
 
 const DEFAULT_USER_SHELF: ShelfProduct[] = [
   {
@@ -137,6 +156,10 @@ const defaults: StoreState = {
     overall: 78, hydration: 82, texture: 74,
     pores: 69, redness: 88, oil: 55, acne: 64, tone: 71,
   },
+  prevScores: {
+    overall: 75, hydration: 78, texture: 72,
+    pores: 67, redness: 84, oil: 58, acne: 61, tone: 69,
+  },
   mode: 'normal',
   activeRitual: null,
   temperatureUnit: 'C',
@@ -152,6 +175,7 @@ const defaults: StoreState = {
   userShelf: DEFAULT_USER_SHELF,
   ritualStreaks: {},
   showPremiumModal: false,
+  questionnaireAnswers: EMPTY_ANSWERS,
 };
 
 const StoreContext = createContext<FullStore>({} as FullStore);
@@ -164,13 +188,17 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       getSession(),
       AsyncStorage.getItem(QUESTIONNAIRE_KEY),
       AsyncStorage.getItem(PITCH_KEY),
-    ]).then(([user, qDone, pSeen]) => {
+      AsyncStorage.getItem(ANSWERS_KEY),
+    ]).then(([user, qDone, pSeen, answersRaw]) => {
+      let answers = EMPTY_ANSWERS;
+      if (answersRaw) { try { answers = { ...EMPTY_ANSWERS, ...JSON.parse(answersRaw) }; } catch {} }
       setState(s => ({
         ...s,
         authed: !!user,
         user: user ?? null,
         questionnaireComplete: !!(user || qDone),
         pitchSeen: !!pSeen,
+        questionnaireAnswers: answers,
       }));
     });
   }, []);
@@ -202,7 +230,12 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const setMode = (mode: AppMode) => setState(s => ({ ...s, mode }));
 
   const setLastScores = (scores: SkinScores) =>
-    setState(s => ({ ...s, lastScores: scores, lastScan: new Date() }));
+    setState(s => ({ ...s, prevScores: s.lastScores, lastScores: scores, lastScan: new Date() }));
+
+  const saveQuestionnaire = (answers: QuestionnaireAnswers) => {
+    AsyncStorage.setItem(ANSWERS_KEY, JSON.stringify(answers));
+    setState(s => ({ ...s, questionnaireAnswers: answers }));
+  };
 
   const setActiveRitual = (key: string | null) =>
     setState(s => ({ ...s, activeRitual: key }));
@@ -225,6 +258,19 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       userShelf: s.userShelf.some(p => p.id === product.id || (p.barcode && p.barcode === product.barcode))
         ? s.userShelf
         : [...s.userShelf, product],
+    }));
+
+  const removeBarcodeProduct = (id: string) =>
+    setState(s => ({ ...s, userShelf: s.userShelf.filter(p => p.id !== id) }));
+
+  // Each completed routine draws down the shelf a little, like real daily use.
+  const logRoutineUsage = () =>
+    setState(s => ({
+      ...s,
+      userShelf: s.userShelf.map(p => ({
+        ...p,
+        remainingVolume: Math.max(0, p.remainingVolume - (2 + Math.floor(Math.random() * 4))),
+      })),
     }));
 
   const completeDailyRitual = (ritualKey: string) =>
@@ -268,8 +314,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       addProduct, removeProduct, setMode,
       setLastScores, setActiveRitual, setTemperatureUnit,
       updateMetrics, togglePassiveTracking, setPremiumStatus,
-      addBarcodeProduct, completeDailyRitual,
-      incrementSurfaceScan, recordStructuralScan,
+      addBarcodeProduct, removeBarcodeProduct, logRoutineUsage, completeDailyRitual,
+      incrementSurfaceScan, recordStructuralScan, saveQuestionnaire,
       openPremiumModal, dismissPremiumModal,
     }}>
       {children}

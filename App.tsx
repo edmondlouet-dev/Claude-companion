@@ -85,7 +85,7 @@ const MainApp: React.FC = () => {
       <View style={{ flex: 1 }}>
         {activeTab === 'today'       && <Today />}
         {activeTab === 'scan'        && <Scan />}
-        {activeTab === 'proportions' && <Proportions />}
+        {activeTab === 'proportions' && <Proportions onOpenSettings={() => setShowSettings(true)} />}
         {activeTab === 'rituals'     && <Rituals />}
         {activeTab === 'you'         && (
           <You
