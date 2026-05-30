@@ -45,7 +45,7 @@ const TABS: { key: TabKey; label: string }[] = [
 const TabIcon: React.FC<{ name: TabKey; active: boolean }> = ({ name, active }) => {
   const color = active ? NAV_ACTIVE : NAV_INACTIVE;
   if (name === 'proportions') {
-    return <FibonacciIcon size={24} strokeWidth={1.2} color={color} showGrid={active} />;
+    return <FibonacciIcon size={24} strokeWidth={1.2} color={color} showGrid />;
   }
   const Icon = ICONS[name as Exclude<TabKey, 'proportions'>];
   return <Icon size={24} strokeWidth={1.2} color={color} />;

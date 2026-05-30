@@ -12,6 +12,7 @@ import { RoutineRow } from '../components/RoutineRow';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { LiveActivityWidget } from '../components/LiveActivityWidget';
 import { AmbientModeOverlay, type AmbientStep } from '../components/AmbientModeOverlay';
+import type { ARMotion } from '../components/ARSculptOverlay';
 import { useStore } from '../store';
 import { buildRoutine, routineGaps, STEP_LABEL, type ProductCategory } from '../products';
 import { getRitual, adaptRoutineForRitual } from '../rituals';
@@ -35,6 +36,17 @@ const WHY: Partial<Record<string, string>> = {
   cleanser:    'A gentle cleanser removes overnight sebum without stripping the barrier.',
   moisturizer: 'Locking in moisture is non-negotiable. A compromised barrier lets everything else work less effectively.',
   retinoid:    'Adapalene accelerates cell turnover. PM only — UV degrades retinoids and increases photosensitivity.',
+};
+
+// How each product type is applied — drives the in-Ambient AR guide.
+const APPLY_MOTION: Record<ProductCategory, ARMotion> = {
+  cleanser:    'apply',
+  moisturizer: 'press',
+  spf:         'press',
+  serum:       'pat',
+  antiox:      'pat',
+  retinoid:    'pat',
+  exfoliant:   'apply',
 };
 
 const BROWSE_URLS: Record<ProductCategory, string> = {
@@ -84,6 +96,7 @@ export const Today: React.FC = () => {
     label:       STEP_LABEL[s.category],
     productName: s.name,
     duration:    Math.max(s.mins * 20, 15),
+    motion:      APPLY_MOTION[s.category] ?? 'apply',
   }));
 
   // Live Activity widget data

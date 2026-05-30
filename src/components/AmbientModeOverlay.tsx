@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions, Easing,
+  View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { X, ChevronRight } from 'lucide-react-native';
+import { X, ChevronRight, ScanFace } from 'lucide-react-native';
+import { ARSculptOverlay, type ARMotion, type ARStep } from './ARSculptOverlay';
 import { C, R, T, S } from '../tokens';
 
 const { width: W } = Dimensions.get('window');
@@ -14,6 +15,7 @@ export interface AmbientStep {
   label: string;
   productName: string;
   duration?: number;
+  motion?: ARMotion;     // how to apply this step (for AR)
 }
 
 interface Props {
@@ -28,51 +30,47 @@ export const AmbientModeOverlay: React.FC<Props> = ({
 }) => {
   const [stepIdx, setStepIdx]         = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [showAR, setShowAR]           = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim     = useRef(new Animated.Value(0)).current;
+  const elapsedRef   = useRef(0);   // ms elapsed in the current step
 
   const totalSteps = steps.length;
   const current    = steps[stepIdx];
   const stepSecs   = current?.duration ?? STEP_DURATION;
 
-  // Fade in on mount
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
 
-  // Progress animation + countdown for the current step.
-  // Timestamp-driven so it tracks real elapsed time exactly, and guarded with a
-  // local `advanced` flag so a double-invoked effect (React 18 StrictMode) can
-  // never skip a step or run the countdown twice as fast.
+  // Reset the clock whenever the step changes.
   useEffect(() => {
-    if (!current) return;
-    let advanced = false;
-
-    progressAnim.stopAnimation();
+    elapsedRef.current = 0;
     progressAnim.setValue(0);
-    setSecondsLeft(stepSecs);
+    setSecondsLeft(Math.ceil(stepSecs));
+  }, [stepIdx]);
 
-    const startedAt = Date.now();
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: stepSecs * 1000,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }).start();
-
+  // Manual, pausable tick loop. Drives the bar (progressAnim) AND the countdown
+  // from one accumulator, so they always agree. Pauses while the AR guide is
+  // open (re-runs on showAR) and resumes from where it left off — no reset.
+  useEffect(() => {
+    if (!current || showAR) return;          // paused while AR is open
+    let last = Date.now();
+    const total = stepSecs * 1000;
     const id = setInterval(() => {
-      const elapsed   = (Date.now() - startedAt) / 1000;
-      const remaining = Math.max(0, Math.ceil(stepSecs - elapsed));
-      setSecondsLeft(remaining);
-      if (elapsed >= stepSecs && !advanced) {
-        advanced = true;
+      const now = Date.now();
+      elapsedRef.current += now - last;
+      last = now;
+      const p = Math.min(1, elapsedRef.current / total);
+      progressAnim.setValue(p);
+      setSecondsLeft(Math.max(0, Math.ceil((total - elapsedRef.current) / 1000)));
+      if (p >= 1) {
         clearInterval(id);
         advanceStep();
       }
-    }, 200);
-
+    }, 50);
     return () => clearInterval(id);
-  }, [stepIdx]);
+  }, [stepIdx, showAR]);
 
   const advanceStep = () => {
     setStepIdx(i => {
@@ -89,6 +87,10 @@ export const AmbientModeOverlay: React.FC<Props> = ({
     inputRange: [0, 1],
     outputRange: [0, BAR_W],
   });
+
+  const arSteps: ARStep[] = current
+    ? [{ icon: current.motion ?? 'apply', title: `Apply · ${current.label}`, body: current.productName }]
+    : [];
 
   return (
     <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
@@ -126,6 +128,12 @@ export const AmbientModeOverlay: React.FC<Props> = ({
         ))}
       </View>
 
+      {/* AR "how to apply" — opens the camera filter for this step */}
+      <TouchableOpacity style={styles.arBtn} onPress={() => setShowAR(true)} activeOpacity={0.85}>
+        <ScanFace size={18} strokeWidth={1.3} color={C.accentInk} />
+        <Text style={[T.button, { color: C.accentInk, fontSize: 12 }]}>AR · how to apply</Text>
+      </TouchableOpacity>
+
       {/* Skip ahead */}
       <TouchableOpacity style={styles.skipBtn} onPress={advanceStep} activeOpacity={0.7}>
         <Text style={[T.kicker, { color: C.ink3 }]}>SKIP STEP</Text>
@@ -136,6 +144,14 @@ export const AmbientModeOverlay: React.FC<Props> = ({
         <Text style={[T.kicker, styles.ritualLabel]}>
           ✦ {ritualKey.toUpperCase()} RITUAL
         </Text>
+      )}
+
+      {showAR && (
+        <ARSculptOverlay
+          steps={arSteps}
+          ritualName={current?.label}
+          onClose={() => setShowAR(false)}
+        />
       )}
     </Animated.View>
   );
@@ -192,11 +208,19 @@ const styles = StyleSheet.create({
     backgroundColor: C.line2,
   },
   dotActive: { backgroundColor: C.accent },
+  arBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    alignSelf: 'center', marginTop: 26,
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: R.pill,
+    backgroundColor: C.accentSoft,
+    borderWidth: 1, borderColor: C.accent + '55',
+  },
   skipBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    marginTop: 28,
+    marginTop: 18,
   },
   ritualLabel: {
-    color: C.accent, textAlign: 'center', marginTop: 18,
+    color: C.accent, textAlign: 'center', marginTop: 16,
   },
 });

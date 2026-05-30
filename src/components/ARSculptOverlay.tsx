@@ -1,30 +1,38 @@
 /**
- * AR Sculpting overlay — launched from a ritual's Structural Sculpting Blueprint.
+ * AR guide overlay — a face-filter-style camera layer.
  *
- * Opens the front camera and draws line-art guides + directional arrows over the
- * face showing exactly how to perform each movement (drainage / sculpt / lift /
- * soothe). Arrows have an animated "flow" dash so the direction of motion reads
- * at a glance; soothe steps render pulsing press-points instead of arrows.
+ * Opens the front camera and lays a translucent face mesh + detection bracket
+ * over the face (so it reads like a Snap/Instagram filter), then draws the
+ * movement on top:
+ *   • sculpt motions  (drainage / sculpt / lift / soothe) — from the structural
+ *     blueprint, launched in Rituals.
+ *   • apply motions   (apply / press / pat) — how to apply a product, launched
+ *     from Ambient Mode.
  *
- * No frames are captured or stored — it's a live guide only.
+ * Arrows have an animated "flow" dash so the direction reads at a glance; press
+ * motions render pulsing press-points. No frames are captured or stored.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Modal, Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Svg, { Path, Ellipse, Circle, G } from 'react-native-svg';
+import Svg, { Path, Ellipse, Circle, Line, G } from 'react-native-svg';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FaceLogo } from './FaceLogo';
 import type { BlueprintIcon } from '../skin';
 import { C, R, T, S } from '../tokens';
 
-const { width: W, height: H } = Dimensions.get('window');
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+const { width: W } = Dimensions.get('window');
+const AnimatedPath   = Animated.createAnimatedComponent(Path);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedG      = Animated.createAnimatedComponent(G);
+
+export type ARMotion = BlueprintIcon | 'apply' | 'press' | 'pat';
 
 export interface ARStep {
-  icon: BlueprintIcon;
+  icon: ARMotion;
   title: string;
   body: string;
 }
@@ -32,10 +40,9 @@ export interface ARStep {
 interface Arrow { d: string; head: string; }
 interface Guide { arrows: Arrow[]; press: { x: number; y: number }[]; cue: string; }
 
-// Arrowhead: a small chevron at tip (x,y) pointing along `angle` (deg, dir of travel).
+// Arrowhead chevron at tip (x,y) pointing along `angle` (deg, dir of travel).
 function head(x: number, y: number, angle: number, len = 4.5): string {
-  const a = (angle * Math.PI) / 180;
-  const back = a + Math.PI;
+  const back = (angle * Math.PI) / 180 + Math.PI;
   const wing = (deg: number) => {
     const w = back + (deg * Math.PI) / 180;
     return `${(x + len * Math.cos(w)).toFixed(1)} ${(y + len * Math.sin(w)).toFixed(1)}`;
@@ -43,8 +50,9 @@ function head(x: number, y: number, angle: number, len = 4.5): string {
   return `M ${wing(28)} L ${x.toFixed(1)} ${y.toFixed(1)} L ${wing(-28)}`;
 }
 
-// Geometry in a 100 × 150 portrait viewBox laid over the camera.
-const GUIDES: Record<BlueprintIcon, Guide> = {
+// Geometry in a 100 × 150 portrait viewBox laid over the camera (face ≈ cx50 cy60).
+const GUIDES: Record<ARMotion, Guide> = {
+  // ── structural sculpting motions ──────────────────────────────────────────
   drainage: {
     arrows: [
       { d: 'M 66 56 C 70 76 66 96 60 110', head: head(60, 110, 110) },
@@ -74,12 +82,59 @@ const GUIDES: Record<BlueprintIcon, Guide> = {
     press: [{ x: 36, y: 66 }, { x: 64, y: 66 }, { x: 50, y: 88 }],
     cue: 'Press — don\'t rub — the final layer in with warm palms to seal and calm.',
   },
+  // ── product application motions ─────────────────────────────────────────────
+  apply: {
+    arrows: [
+      { d: 'M 50 56 C 60 54 70 54 78 52', head: head(78, 52, -8) },
+      { d: 'M 50 56 C 40 54 30 54 22 52', head: head(22, 52, 188) },
+      { d: 'M 50 44 C 50 40 50 36 50 31', head: head(50, 31, -90) },
+    ],
+    press: [],
+    cue: 'Warm between palms, then smooth outward from the centre of the face along the cheekbones.',
+  },
+  press: {
+    arrows: [],
+    press: [{ x: 50, y: 36 }, { x: 34, y: 58 }, { x: 66, y: 58 }, { x: 50, y: 84 }],
+    cue: 'Press evenly into the skin with flat palms — don\'t drag. Forehead, cheeks, then chin.',
+  },
+  pat: {
+    arrows: [],
+    press: [{ x: 40, y: 50 }, { x: 60, y: 50 }, { x: 34, y: 64 }, { x: 66, y: 64 }, { x: 50, y: 76 }],
+    cue: 'Pat gently with fingertips until absorbed — let each layer sink in before the next.',
+  },
 };
 
-const LABEL: Record<BlueprintIcon, string> = {
-  drainage: 'LYMPHATIC DRAINAGE', sculpt: 'CHEEK SCULPT',
-  lift: 'EYE LIFT', soothe: 'BARRIER PRESS',
+const LABEL: Record<ARMotion, string> = {
+  drainage: 'LYMPHATIC DRAINAGE', sculpt: 'CHEEK SCULPT', lift: 'EYE LIFT', soothe: 'BARRIER PRESS',
+  apply: 'SMOOTH OUTWARD', press: 'PRESS & SEAL', pat: 'PAT TO ABSORB',
 };
+
+// ── Face-mesh wireframe (filter look) ──────────────────────────────────────────
+const MESH_DOTS: [number, number][] = [
+  [38, 34], [50, 30], [62, 34],          // forehead
+  [34, 44], [44, 43], [56, 43], [66, 44], // brow
+  [38, 50], [50, 50], [62, 50],          // eye line
+  [50, 58], [50, 64],                    // bridge
+  [44, 66], [56, 66],                    // nose base
+  [32, 62], [68, 62],                    // cheeks
+  [42, 78], [50, 79], [58, 78],          // mouth
+  [36, 86], [64, 86], [50, 92], [50, 96], // jaw + chin
+];
+const MESH_LINES: [number, number, number, number][] = [
+  [38,34,50,30],[50,30,62,34],
+  [34,44,44,43],[44,43,56,43],[56,43,66,44],
+  [38,50,50,50],[50,50,62,50],
+  [50,50,50,58],[50,58,50,64],
+  [44,66,50,64],[50,64,56,66],
+  [32,62,44,66],[56,66,68,62],
+  [42,78,50,79],[50,79,58,78],
+  [36,86,50,96],[50,96,64,86],
+  [32,62,36,86],[68,62,64,86],
+  [34,44,32,62],[66,44,68,62],
+  [38,34,34,44],[62,34,66,44],
+  [50,79,50,92],[50,92,50,96],
+  [38,50,44,43],[62,50,56,43],
+];
 
 interface Props {
   steps: ARStep[];
@@ -92,16 +147,12 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
   const [permission, requestPermission] = useCameraPermissions();
   const [idx, setIdx] = useState(0);
 
-  const flow  = useRef(new Animated.Value(0)).current;   // arrow dash flow
-  const pulse = useRef(new Animated.Value(0)).current;   // press-point pulse
+  const flow  = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(
-      Animated.timing(flow, { toValue: 1, duration: 1100, useNativeDriver: false }),
-    ).start();
-    Animated.loop(
-      Animated.timing(pulse, { toValue: 1, duration: 1600, useNativeDriver: false }),
-    ).start();
+    Animated.loop(Animated.timing(flow,  { toValue: 1, duration: 1100, useNativeDriver: false })).start();
+    Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1600, useNativeDriver: false })).start();
   }, []);
 
   const step  = steps[idx];
@@ -110,6 +161,8 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
   const dashOffset = flow.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
   const pulseR     = pulse.interpolate({ inputRange: [0, 1], outputRange: [3, 11] });
   const pulseO     = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
+  const meshO      = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.75, 0.5] });
+  const bracketO   = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.45, 0.9, 0.45] });
 
   return (
     <Modal visible animationType="fade" onRequestClose={onClose} transparent={false}>
@@ -122,7 +175,6 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
           </View>
         )}
 
-        {/* Darkening so the line-art reads over any camera feed */}
         <View style={[StyleSheet.absoluteFill, styles.scrim]} pointerEvents="none" />
 
         {/* AR guide layer */}
@@ -132,28 +184,40 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
           preserveAspectRatio="xMidYMid slice"
           pointerEvents="none"
         >
-          {/* face guide */}
-          <Ellipse cx={50} cy={60} rx={28} ry={38} fill="none" stroke="rgba(255,255,255,0.30)" strokeWidth={0.5} />
-          <Path d="M 50 30 L 50 92" stroke="rgba(255,255,255,0.16)" strokeWidth={0.4} />
+          {/* face-detection bracket — pulses to feel "locked on" */}
+          <AnimatedG opacity={bracketO}>
+            <Path d="M 18 32 L 18 26 L 26 26" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+            <Path d="M 82 32 L 82 26 L 74 26" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+            <Path d="M 18 90 L 18 96 L 26 96" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+            <Path d="M 82 90 L 82 96 L 74 96" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+          </AnimatedG>
 
+          {/* face mesh wireframe */}
+          <AnimatedG opacity={meshO}>
+            <Ellipse cx={50} cy={60} rx={28} ry={38} fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth={0.4} />
+            {MESH_LINES.map((l, i) => (
+              <Line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="rgba(255,255,255,0.30)" strokeWidth={0.3} />
+            ))}
+            {MESH_DOTS.map((p, i) => (
+              <Circle key={i} cx={p[0]} cy={p[1]} r={0.7} fill="rgba(255,255,255,0.85)" />
+            ))}
+          </AnimatedG>
+
+          {/* movement arrows */}
           {guide?.arrows.map((ar, i) => (
             <G key={i}>
               <AnimatedPath
-                d={ar.d}
-                fill="none"
-                stroke={C.accent}
-                strokeWidth={1.6}
-                strokeLinecap="round"
-                strokeDasharray="6 6"
-                strokeDashoffset={dashOffset}
+                d={ar.d} fill="none" stroke={C.accent} strokeWidth={1.8}
+                strokeLinecap="round" strokeDasharray="6 6" strokeDashoffset={dashOffset}
               />
-              <Path d={ar.head} fill="none" stroke={C.accent} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+              <Path d={ar.head} fill="none" stroke={C.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
             </G>
           ))}
 
+          {/* press points */}
           {guide?.press.map((p, i) => (
             <G key={`p-${i}`}>
-              <AnimatedCircle cx={p.x} cy={p.y} r={pulseR} fill="none" stroke={C.accent} strokeWidth={0.8} opacity={pulseO} />
+              <AnimatedCircle cx={p.x} cy={p.y} r={pulseR} fill="none" stroke={C.accent} strokeWidth={0.9} opacity={pulseO} />
               <Circle cx={p.x} cy={p.y} r={2.4} fill={C.accent} />
             </G>
           ))}
@@ -162,11 +226,12 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
         {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
           <View>
-            <Text style={[T.kicker, { color: 'rgba(255,255,255,0.85)', letterSpacing: 2 }]}>
-              AR SCULPT {ritualName ? `· ${ritualName.toUpperCase()}` : ''}
-            </Text>
+            <View style={styles.lockRow}>
+              <View style={styles.lockDot} />
+              <Text style={[T.kicker, { color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5 }]}>FACE LOCKED</Text>
+            </View>
             <Text style={[T.kicker, { color: C.accent, marginTop: 4 }]}>
-              {step ? LABEL[step.icon] : ''}
+              {step ? LABEL[step.icon] : ''}{ritualName ? ` · ${ritualName.toUpperCase()}` : ''}
             </Text>
           </View>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.8}>
@@ -190,17 +255,15 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
             {guide?.cue}
           </Text>
 
-          {/* dots */}
           <View style={styles.dotRow}>
             {steps.map((_, i) => (
               <View key={i} style={[styles.dot, i === idx && styles.dotActive]} />
             ))}
           </View>
 
-          {/* nav */}
           <View style={styles.navRow}>
             <TouchableOpacity
-              style={[styles.navBtn, idx === 0 && styles.navBtnDisabled]}
+              style={styles.navBtn}
               disabled={idx === 0}
               onPress={() => setIdx(i => Math.max(0, i - 1))}
               activeOpacity={0.8}
@@ -211,12 +274,12 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
 
             {idx < steps.length - 1 ? (
               <TouchableOpacity style={styles.navBtnPrimary} onPress={() => setIdx(i => i + 1)} activeOpacity={0.85}>
-                <Text style={[T.button, { color: C.ink, fontSize: 12 }]}>Next movement</Text>
+                <Text style={[T.button, { color: C.ink, fontSize: 12 }]}>Next</Text>
                 <ChevronRight size={18} strokeWidth={1.4} color={C.ink} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.navBtnPrimary} onPress={onClose} activeOpacity={0.85}>
-                <Text style={[T.button, { color: C.ink, fontSize: 12 }]}>✓  Finish</Text>
+                <Text style={[T.button, { color: C.ink, fontSize: 12 }]}>✓  Done</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -225,8 +288,6 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
     </Modal>
   );
 };
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0D0B08' },
@@ -237,6 +298,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     paddingHorizontal: S.gutter, paddingBottom: 12,
   },
+  lockRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  lockDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#5BD66E' },
   closeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   card: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -254,7 +317,6 @@ const styles = StyleSheet.create({
   dotActive: { backgroundColor: C.accent, width: 18 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
   navBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 10, paddingHorizontal: 8 },
-  navBtnDisabled: {},
   navBtnPrimary: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'white', borderRadius: R.md,

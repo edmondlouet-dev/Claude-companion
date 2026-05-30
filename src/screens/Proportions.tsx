@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions,
 } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { MetricStrip } from '../components/MetricStrip';
 import { FlutedGlass } from '../components/FlutedGlass';
+import { FaceLogo } from '../components/FaceLogo';
 import { PremiumModal } from '../components/PremiumModal';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
@@ -26,43 +26,6 @@ const LM_METRICS = [
   { key: 'midface', value: '6.9', label: 'Midface', dot: 'warn' as const },
   { key: 'skin',    value: '7.8', label: 'Skin',    dot: 'good' as const },
 ];
-
-/**
- * Single-line abstract face (à la the reference line art): the features sit in
- * a 3/4 read — brows arch upper-right, one almond eye is offset to the right,
- * and a long nose flows down the centre-left into a small curl before the lips.
- * Deliberately asymmetric so it never reads as a centred "cyclops" eye.
- */
-const MinimalistFace: React.FC<{ size: number }> = ({ size }) => {
-  const s = { fill: 'none', stroke: C.ink2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  return (
-    <Svg width={size} height={size * 1.25} viewBox="0 0 200 250">
-      {/* ── Brows — main arch above the eye + a softer lower-left brow ─── */}
-      <Path d="M 92 58 C 120 42 158 44 182 60" {...s} strokeWidth={1.4} />
-      <Path d="M 30 80 C 50 70 78 70 96 76" {...s} strokeWidth={1} />
-
-      {/* ── Eye — almond, offset to the right ─────────────────────────── */}
-      <Path d="M 104 96 C 128 80 162 80 184 96" {...s} strokeWidth={1.5} />
-      <Path d="M 104 96 C 128 108 162 108 184 96" {...s} strokeWidth={1.5} />
-      {/* iris ring */}
-      <Circle cx={144} cy={95} r={11} {...s} strokeWidth={1.2} />
-      {/* pupil */}
-      <Circle cx={144} cy={95} r={4} fill={C.ink2} />
-
-      {/* ── Nose — long flowing line from the left brow into a curl ───── */}
-      <Path
-        d="M 92 76 C 84 110 76 145 76 168 C 76 182 90 190 98 180 C 103 173 96 167 86 172"
-        {...s}
-        strokeWidth={1.3}
-      />
-
-      {/* ── Upper lip — cupid's bow ───────────────────────────────────── */}
-      <Path d="M 78 216 C 94 204 106 211 114 207 C 122 211 134 204 150 216" {...s} strokeWidth={1.5} />
-      {/* ── Lower lip — full arc ──────────────────────────────────────── */}
-      <Path d="M 78 216 Q 114 235 150 216" {...s} strokeWidth={1.5} />
-    </Svg>
-  );
-};
 
 export const Proportions: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -152,10 +115,10 @@ export const Proportions: React.FC = () => {
           <MetricStrip metrics={LM_METRICS} active={active} onPick={setActive} />
         </View>
 
-        {/* Face diagram — minimalist line art */}
+        {/* Face diagram — the Poreless logo mark */}
         <FlutedGlass padding={16} mode="lookmax" style={{ marginBottom: 14 }}>
           <View style={styles.diagramWrap}>
-            <MinimalistFace size={DIAGRAM_SIZE} />
+            <FaceLogo size={DIAGRAM_SIZE} color={C.ink2} strokeWidth={1.4} animated />
           </View>
         </FlutedGlass>
 
