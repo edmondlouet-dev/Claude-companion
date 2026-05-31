@@ -266,7 +266,7 @@ export const Today: React.FC = () => {
             progress={liveProgress}
             streak={streak}
             ritualName={ritual?.name}
-            onAdvance={completeNext}
+            onAdvance={ritualMastered ? undefined : completeNext}
             allDone={allDone}
           />
         )}

@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import Svg, { Path, Ellipse, Circle, Line, G } from 'react-native-svg';
+const AnimatedLine = Animated.createAnimatedComponent(Line);
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FaceLogo } from './FaceLogo';
@@ -146,12 +147,16 @@ interface Props {
 export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose }) => {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
-  const [idx, setIdx] = useState(0);
+  const [idx, setIdx]   = useState(0);
   const [detectP, setDetectP] = useState(0);   // 0–1 completion confidence
-  const [done, setDone]       = useState(false);
+  const [done, setDone] = useState(false);
+  // Lock-on state machine: every step re-acquires the face, then locks on before
+  // the completion detector starts — so it reads like genuine tracking.
+  const [phase, setPhase] = useState<'acquiring' | 'locked'>('acquiring');
 
-  const flow  = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
+  const flow    = useRef(new Animated.Value(0)).current;
+  const pulse   = useRef(new Animated.Value(0)).current;
+  const acquire = useRef(new Animated.Value(0)).current;   // 0→1 lock-on sweep
 
   useEffect(() => {
     Animated.loop(Animated.timing(flow,  { toValue: 1, duration: 1100, useNativeDriver: false })).start();
@@ -166,24 +171,42 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
     else setTimeout(onClose, 600);
   };
 
-  // AI completion detection — watches the motion and auto-advances when the step
-  // reads as complete. Live: streams frames to the model. Sim: realistic hold.
+  // Each step: run the acquisition sweep, lock on, THEN start completion detection.
+  // Live builds stream frames to the model; Expo Go runs a realistic hold timer.
   useEffect(() => {
     setDetectP(0);
     setDone(false);
-    const stop = detectStepCompletion(
-      () => null,                         // frame provider (wired to camera when live)
-      (p) => setDetectP(p),
-      () => { setDone(true); setTimeout(goNext, 700); },
-    );
-    return stop;
+    setPhase('acquiring');
+    acquire.setValue(0);
+    let stop = () => {};
+    const anim = Animated.timing(acquire, { toValue: 1, duration: 1200, useNativeDriver: false });
+    anim.start(({ finished }) => {
+      if (!finished) return;
+      setPhase('locked');
+      stop = detectStepCompletion(
+        () => null,                       // frame provider (wired to camera when live)
+        (p) => setDetectP(p),
+        () => { setDone(true); setTimeout(goNext, 700); },
+      );
+    });
+    return () => { anim.stop(); stop(); };
   }, [idx]);
 
+  const locked     = phase === 'locked';
   const dashOffset = flow.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
   const pulseR     = pulse.interpolate({ inputRange: [0, 1], outputRange: [3, 11] });
   const pulseO     = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
-  const meshO      = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.75, 0.5] });
-  const bracketO   = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.45, 0.9, 0.45] });
+  const breatheO   = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.75, 0.5] });
+  const bracketLk  = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.45, 0.9, 0.45] });
+  // Mesh + brackets fade in with the sweep while acquiring, then breathe once locked.
+  const meshO      = locked ? breatheO : acquire;
+  const bracketO   = locked ? bracketLk : acquire;
+  // Scanning sweep line travels down the face during acquisition.
+  const sweepY     = acquire.interpolate({ inputRange: [0, 1], outputRange: [22, 100] });
+  const sweepO     = acquire.interpolate({ inputRange: [0, 0.1, 0.85, 1], outputRange: [0, 0.85, 0.85, 0] });
+  // Subtle world-anchored sway so the whole guide reads as locked to the face.
+  const swayX      = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [-1.4, 1.4, -1.4] });
+  const swayY      = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, -1, 1] });
 
   return (
     <Modal visible animationType="fade" onRequestClose={onClose} transparent={false}>
@@ -198,58 +221,70 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
 
         <View style={[StyleSheet.absoluteFill, styles.scrim]} pointerEvents="none" />
 
-        {/* AR guide layer */}
-        <Svg
-          style={StyleSheet.absoluteFill}
-          viewBox="0 0 100 150"
-          preserveAspectRatio="xMidYMid slice"
+        {/* AR guide layer — swayed as one unit so it reads as anchored to the face */}
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { transform: [{ translateX: swayX }, { translateY: swayY }] }]}
           pointerEvents="none"
         >
-          {/* face-detection bracket — pulses to feel "locked on" */}
-          <AnimatedG opacity={bracketO}>
-            <Path d="M 18 32 L 18 26 L 26 26" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
-            <Path d="M 82 32 L 82 26 L 74 26" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
-            <Path d="M 18 90 L 18 96 L 26 96" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
-            <Path d="M 82 90 L 82 96 L 74 96" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
-          </AnimatedG>
+          <Svg
+            style={StyleSheet.absoluteFill}
+            viewBox="0 0 100 150"
+            preserveAspectRatio="xMidYMid slice"
+          >
+            {/* face-detection bracket — fades in on acquire, pulses once locked */}
+            <AnimatedG opacity={bracketO}>
+              <Path d="M 18 32 L 18 26 L 26 26" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+              <Path d="M 82 32 L 82 26 L 74 26" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+              <Path d="M 18 90 L 18 96 L 26 96" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+              <Path d="M 82 90 L 82 96 L 74 96" stroke="white" strokeWidth={0.8} fill="none" strokeLinecap="round" />
+            </AnimatedG>
 
-          {/* face mesh wireframe */}
-          <AnimatedG opacity={meshO}>
-            <Ellipse cx={50} cy={60} rx={28} ry={38} fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth={0.4} />
-            {MESH_LINES.map((l, i) => (
-              <Line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="rgba(255,255,255,0.30)" strokeWidth={0.3} />
+            {/* face mesh wireframe */}
+            <AnimatedG opacity={meshO}>
+              <Ellipse cx={50} cy={60} rx={28} ry={38} fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth={0.4} />
+              {MESH_LINES.map((l, i) => (
+                <Line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="rgba(255,255,255,0.30)" strokeWidth={0.3} />
+              ))}
+              {MESH_DOTS.map((p, i) => (
+                <Circle key={i} cx={p[0]} cy={p[1]} r={0.7} fill="rgba(255,255,255,0.85)" />
+              ))}
+            </AnimatedG>
+
+            {/* acquisition sweep line — travels down the face while locking on */}
+            <AnimatedLine
+              x1={22} x2={78} y1={sweepY} y2={sweepY}
+              stroke={C.accent} strokeWidth={0.7} opacity={sweepO} strokeLinecap="round"
+            />
+
+            {/* movement guidance — only once the face is locked */}
+            {locked && guide?.arrows.map((ar, i) => (
+              <G key={i}>
+                <AnimatedPath
+                  d={ar.d} fill="none" stroke={C.accent} strokeWidth={1.8}
+                  strokeLinecap="round" strokeDasharray="6 6" strokeDashoffset={dashOffset}
+                />
+                <Path d={ar.head} fill="none" stroke={C.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              </G>
             ))}
-            {MESH_DOTS.map((p, i) => (
-              <Circle key={i} cx={p[0]} cy={p[1]} r={0.7} fill="rgba(255,255,255,0.85)" />
+
+            {/* press points — only once locked */}
+            {locked && guide?.press.map((p, i) => (
+              <G key={`p-${i}`}>
+                <AnimatedCircle cx={p.x} cy={p.y} r={pulseR} fill="none" stroke={C.accent} strokeWidth={0.9} opacity={pulseO} />
+                <Circle cx={p.x} cy={p.y} r={2.4} fill={C.accent} />
+              </G>
             ))}
-          </AnimatedG>
-
-          {/* movement arrows */}
-          {guide?.arrows.map((ar, i) => (
-            <G key={i}>
-              <AnimatedPath
-                d={ar.d} fill="none" stroke={C.accent} strokeWidth={1.8}
-                strokeLinecap="round" strokeDasharray="6 6" strokeDashoffset={dashOffset}
-              />
-              <Path d={ar.head} fill="none" stroke={C.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-            </G>
-          ))}
-
-          {/* press points */}
-          {guide?.press.map((p, i) => (
-            <G key={`p-${i}`}>
-              <AnimatedCircle cx={p.x} cy={p.y} r={pulseR} fill="none" stroke={C.accent} strokeWidth={0.9} opacity={pulseO} />
-              <Circle cx={p.x} cy={p.y} r={2.4} fill={C.accent} />
-            </G>
-          ))}
-        </Svg>
+          </Svg>
+        </Animated.View>
 
         {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
           <View>
             <View style={styles.lockRow}>
-              <View style={styles.lockDot} />
-              <Text style={[T.kicker, { color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5 }]}>FACE LOCKED</Text>
+              <View style={[styles.lockDot, { backgroundColor: locked ? '#5BD66E' : C.warn }]} />
+              <Text style={[T.kicker, { color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5 }]}>
+                {locked ? 'FACE LOCKED' : 'ACQUIRING…'}
+              </Text>
             </View>
             <Text style={[T.kicker, { color: C.accent, marginTop: 4 }]}>
               {step ? LABEL[step.icon] : ''}{ritualName ? ` · ${ritualName.toUpperCase()}` : ''}
@@ -283,12 +318,16 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
           <View style={styles.detectRow}>
             <View style={styles.detectTrack}>
               <View style={[styles.detectFill, {
-                width: `${Math.round(detectP * 100)}%`,
+                width: `${Math.round((locked ? detectP : 0) * 100)}%`,
                 backgroundColor: done ? '#5BD66E' : C.accent,
               }]} />
             </View>
             <Text style={[T.kicker, { color: done ? '#5BD66E' : 'rgba(255,255,255,0.7)', fontSize: 9, marginTop: 6 }]}>
-              {done ? '✓ MOVEMENT COMPLETE · ADVANCING' : 'HOLD THE MOTION · DETECTING COMPLETION…'}
+              {!locked
+                ? 'ALIGNING TO FACE MESH…'
+                : done
+                  ? '✓ MOVEMENT COMPLETE · ADVANCING'
+                  : 'HOLD THE MOTION · DETECTING COMPLETION…'}
             </Text>
           </View>
 

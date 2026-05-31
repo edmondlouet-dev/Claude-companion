@@ -221,7 +221,7 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
         </FlutedGlass>
 
         <View style={styles.footer}>
-          <Text style={[T.kicker, { color: C.ink3 }]}>METRICS — OVERALL</Text>
+          <Text style={[T.kicker, { color: C.ink3 }]}>METRICS · STRUCTURAL</Text>
           <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3 }]}>
             {GEMINI_LIVE ? 'PORELESS AI · LIVE' : 'PORELESS AI · SIM'}
           </Text>

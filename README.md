@@ -125,3 +125,42 @@ The movement is capped at ~3–4px so it never interferes with readability. It g
 | `sage` | `#8E8B5C` | Done / positive states |
 
 Full token list in `src/tokens.ts`.
+
+---
+
+## AR Sculpting Guides
+
+`src/components/ARSculptOverlay.tsx` lays a face-filter-style guide over the front
+camera: a wireframe **face mesh**, a pulsing **detection bracket**, animated
+**movement arrows** (drainage / sculpt / lift / soothe) and **press points**. It's
+launched two ways — from a ritual's Structural Blueprint (Rituals tab) and from
+Ambient Mode's "how to apply" button.
+
+**Lock-on state machine.** Each step runs an *acquisition sweep* (a scan line
+travels down the face while the mesh + bracket fade in), then flips to **FACE
+LOCKED**, and only *then* starts the AI completion detector. The whole guide is
+swayed as a single unit so it reads as anchored to the face. All of this uses only
+Expo-Go-safe APIs (`expo-camera` + `react-native-svg` + `Animated`), so it runs in
+Expo Go with no native build.
+
+### Optional: true face-landmark tracking (requires a dev build)
+
+Expo Go cannot run native frame processors, so the mesh is centered rather than
+pinned to real landmarks. To anchor overlays to actual face coordinates, move to an
+**EAS development build** and wire a detector:
+
+```bash
+# 1. Leave Expo Go behind — create a dev build
+npx expo install react-native-vision-camera react-native-worklets-core
+npm i  react-native-vision-camera-face-detector
+npx expo prebuild
+eas build --profile development --platform ios   # or run locally with Xcode
+```
+
+Then feed live landmarks into the overlay. The integration point already exists:
+`ARSculptOverlay` calls `detectStepCompletion(frameProvider, …)` with a
+`frameProvider` that currently returns `null`. Swap it for the detector's frame
+output, and map the returned landmark box to the SVG `viewBox` (the mesh, bracket
+and arrows are all authored in a `100 × 150` portrait space, so it's a single
+affine transform). Keep the Expo-Go fallback by guarding the native import behind a
+capability check so the app still loads in Expo Go.
