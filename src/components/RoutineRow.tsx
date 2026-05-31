@@ -30,7 +30,9 @@ export const RoutineRow: React.FC<Props> = ({
   const contentOpacity = useRef(new Animated.Value(defaultDone ? 0.55 : 1)).current;
 
   const toggle = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Haptics aren't available on every surface (web / some sandboxes); never
+    // let a buzz crash the row.
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     const next = !done;
     setDone(next);
