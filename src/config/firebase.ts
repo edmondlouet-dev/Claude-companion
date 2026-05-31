@@ -49,6 +49,12 @@ export const VISION_ENABLED = false;
  * so nothing crashes and the UX is identical. Dropping the key in here is the
  * only change needed to go live.
  */
-export const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY';
-export const GEMINI_ENABLED = false;
-export const GEMINI_MODEL = 'gemini-2.0-flash';
+// The key is read from EXPO_PUBLIC_GEMINI_KEY in your gitignored `.env` (never
+// hard-coded here, never committed). LIVE turns on automatically the moment a
+// real key is present; otherwise every Gemini feature runs its local simulation.
+export const GEMINI_API_KEY =
+  process.env.EXPO_PUBLIC_GEMINI_KEY ?? 'YOUR_GEMINI_API_KEY';
+export const GEMINI_MODEL =
+  process.env.EXPO_PUBLIC_GEMINI_MODEL ?? 'gemini-2.5-flash';
+export const GEMINI_ENABLED =
+  !!GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY';

@@ -18,28 +18,9 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { X, ScanText, ShoppingBag, Check, TriangleAlert } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { profileFromLabelText, GEMINI_LIVE } from '../services/gemini';
-import type { ShelfProduct } from '../store';
+import { GEMINI_LIVE } from '../services/gemini';
+import { useStore, type ShelfProduct } from '../store';
 import { C, R, T, S } from '../tokens';
-
-const HARSH_ACTIVES = [
-  'retinol', 'retinyl', 'tretinoin', 'retinoic', 'adapalene',
-  'glycolic acid', 'salicylic acid', 'benzoyl peroxide',
-  'ascorbic acid', 'vitamin c', 'lactic acid', 'azelaic acid',
-];
-
-function harshActiveIn(ingredients: string[]): string | null {
-  const lower = ingredients.map(i => i.toLowerCase());
-  for (const h of HARSH_ACTIVES) {
-    if (lower.some(ing => ing.includes(h))) return h;
-  }
-  return null;
-}
-
-function getRestockUrl(name: string, brand = ''): string {
-  const q = `${brand} ${name}`.trim();
-  return `https://www.amazon.co.uk/s?k=${encodeURIComponent(q)}&tag=poreless-20`;
-}
 
 /**
  * Cloud Vision OCR — simulated. Returns the raw text a label photo would yield.
@@ -75,6 +56,7 @@ export const ProductLabelScanner: React.FC<Props> = ({
   visible, barrierStatus, onClose, onProductAdded,
 }) => {
   const insets = useSafeAreaInsets();
+  const { analyzeLabel } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase]     = useState<Phase>('aim');
   const [stage, setStage]     = useState('');   // sub-status during reading
@@ -104,18 +86,11 @@ export const ProductLabelScanner: React.FC<Props> = ({
       // 2. OCR the label text
       setStage('Reading label…');
       const ocrText = await simulateOCR();
-      // 3. Gemini → structured profile
-      setStage('Identifying product…');
-      const profile = await profileFromLabelText(ocrText);
-      const shelf: ShelfProduct = {
-        id: `lbl-${Date.now()}`,
-        name: profile.name,
-        brand: profile.brand,
-        ingredients: profile.ingredients,
-        remainingVolume: 100,
-        purchaseUrl: getRestockUrl(profile.name, profile.brand),
-        category: profile.category,
-      };
+      // 3. Gemini cosmetic chemist → structured profile + conflict verdict.
+      //    Routed through the store so isAnalyzing drives the dashboard shimmer
+      //    and the verdict is judged against the live barrier reading.
+      setStage('Consulting the chemist…');
+      const shelf = await analyzeLabel(ocrText);
       setProduct(shelf);
       setPhase('preview');
     } catch {
@@ -129,10 +104,8 @@ export const ProductLabelScanner: React.FC<Props> = ({
     onClose();
   };
 
-  const harshActive     = product ? harshActiveIn(product.ingredients) : null;
-  const barrierFatigued = /sensiti|fatig/i.test(barrierStatus);
-  const showWarning     = !!(harshActive && barrierFatigued);
-  const cameraReady     = !!permission?.granted;
+  const showWarning = !!product?.warningText;
+  const cameraReady = !!permission?.granted;
 
   return (
     <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -201,7 +174,7 @@ export const ProductLabelScanner: React.FC<Props> = ({
                 <View style={styles.warnNote}>
                   <TriangleAlert size={14} strokeWidth={1.3} color={C.warn} />
                   <Text style={[T.bodySm, { color: C.ink2, flex: 1, fontSize: 12, lineHeight: 16 }]}>
-                    Contains <Text style={{ fontWeight: '600' }}>{harshActive}</Text> — ease in gently while your barrier recovers.
+                    {product.warningText}
                   </Text>
                 </View>
               )}

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Linking,
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Linking, Animated,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Wind } from 'lucide-react-native';
@@ -11,6 +11,7 @@ import { MetricStrip } from '../components/MetricStrip';
 import { RoutineRow } from '../components/RoutineRow';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { LiveActivityWidget } from '../components/LiveActivityWidget';
+import { SkeletonLines } from '../components/Skeleton';
 import { AmbientModeOverlay, type AmbientStep } from '../components/AmbientModeOverlay';
 import type { ARMotion } from '../components/ARSculptOverlay';
 import { useStore, type SkinScores } from '../store';
@@ -92,11 +93,18 @@ export const Today: React.FC = () => {
   const {
     owned, streak, activeRitual, user, lastScores, prevScores, temperatureUnit,
     ritualStreaks, completeDailyRitual, logRoutineUsage,
-    userShelf, faceMetrics, questionnaireAnswers,
+    userShelf, faceMetrics, questionnaireAnswers, isAnalyzing,
   } = useStore();
   const [activeMetric, setActiveMetric] = useState('overall');
   const [quickAdd, setQuickAdd]         = useState('');
   const [showAmbient, setShowAmbient]   = useState(false);
+
+  // The delta card "pops" each time a different score chip is tapped.
+  const popAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    popAnim.setValue(0.6);
+    Animated.spring(popAnim, { toValue: 1, useNativeDriver: true, damping: 12, stiffness: 220 }).start();
+  }, [activeMetric]);
 
   const routine = buildRoutine(owned, 'AM');
   const gaps    = routineGaps(owned, questionnaireAnswers.concern);
@@ -143,14 +151,18 @@ export const Today: React.FC = () => {
   const trendColor = delta > 1 ? C.sage : delta < -1 ? C.warn : C.ink3;
 
   // Cosmetic Conflict Harmonizer — surfaces on the dashboard the moment a shelf
-  // product's actives clash with the barrier read from the latest scan.
+  // product clashes with the barrier read from the latest scan. A product the
+  // Gemini chemist flagged (warningText) wins; otherwise fall back to a local
+  // active-vs-barrier check so the banner still works in simulation.
   const HARSH = ['retinol', 'retinyl', 'tretinoin', 'adapalene', 'glycolic acid',
     'salicylic acid', 'benzoyl peroxide', 'ascorbic acid', 'vitamin c', 'lactic acid'];
   const barrierFatigued = /sensiti|fatig/i.test(faceMetrics.barrierStatus);
-  const conflictProduct = barrierFatigued
+  const flaggedProduct  = userShelf.find(p => !!p.warningText);
+  const conflictProduct = flaggedProduct ?? (barrierFatigued
     ? userShelf.find(p => p.ingredients.some(i => HARSH.some(h => i.toLowerCase().includes(h))))
-    : undefined;
+    : undefined);
   const conflictActive = conflictProduct?.ingredients.find(i => HARSH.some(h => i.toLowerCase().includes(h)));
+  const conflictCopy = conflictProduct?.warningText ?? null;
 
   return (
     <View style={styles.root}>
@@ -256,26 +268,40 @@ export const Today: React.FC = () => {
         <View style={{ marginBottom: 10 }}>
           <MetricStrip metrics={metrics} active={activeMetric} onPick={setActiveMetric} />
         </View>
-        <FlutedGlass padding={12} style={{ marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Text style={[T.num, { fontSize: 28, fontWeight: '700', color: C.ink }]}>{curVal}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={[T.body, { fontWeight: '600', fontSize: 13 }]}>{selField.label}</Text>
-              <Text style={[T.bodySm, { color: trendColor, fontSize: 12, marginTop: 1 }]}>
-                {delta > 0 ? '▲' : delta < 0 ? '▼' : '■'} {delta > 0 ? '+' : ''}{delta} since last scan · {trend}
-              </Text>
+        <Animated.View style={{ transform: [{ scale: popAnim }], opacity: popAnim }}>
+          <FlutedGlass padding={14} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={[T.num, { fontSize: 30, fontWeight: '700', color: C.ink }]}>{curVal}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[T.body, { fontWeight: '600', fontSize: 14 }]}>{selField.label}</Text>
+                <Text style={[T.bodySm, { color: trendColor, fontSize: 12, marginTop: 2, fontWeight: '600' }]}>
+                  {delta > 0 ? '▲' : delta < 0 ? '▼' : '■'} {delta > 0 ? '+' : ''}{delta} ·{' '}
+                  {delta > 1 ? 'improved' : delta < -1 ? 'dipped' : 'steady'}
+                </Text>
+              </View>
+              <View style={styles.lastChip}>
+                <Text style={[T.kicker, { color: C.ink4, fontSize: 8 }]}>LAST SCAN</Text>
+                <Text style={[T.num, { color: C.ink2, fontSize: 17, fontWeight: '600' }]}>{prevVal}</Text>
+              </View>
             </View>
-          </View>
-        </FlutedGlass>
+          </FlutedGlass>
+        </Animated.View>
 
-        {/* Cosmetic Conflict Harmonizer banner */}
-        {conflictProduct && conflictActive && (
+        {/* Cosmetic Conflict Harmonizer banner — shimmers while the chemist thinks */}
+        {isAnalyzing ? (
+          <FlutedGlass padding={12} style={[styles.harmonizer, { marginBottom: 16 }]}>
+            <Text style={[T.kicker, { color: C.warn, marginBottom: 8 }]}>✦ CONFLICT HARMONIZER · ANALYSING</Text>
+            <SkeletonLines lines={2} lastWidth="70%" />
+          </FlutedGlass>
+        ) : conflictProduct && (conflictCopy || conflictActive) && (
           <FlutedGlass padding={12} style={[styles.harmonizer, { marginBottom: 16 }]}>
             <Text style={[T.kicker, { color: C.warn, marginBottom: 4 }]}>✦ CONFLICT HARMONIZER</Text>
             <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>
-              <Text style={{ fontWeight: '600' }}>{conflictProduct.name}</Text> has{' '}
-              <Text style={{ fontWeight: '600' }}>{conflictActive}</Text>. Your barrier reads{' '}
-              {faceMetrics.barrierStatus.toLowerCase()} — swap in your Hyaluronic Acid tonight and ease this back in once calm.
+              <Text style={{ fontWeight: '600' }}>{conflictProduct.name}</Text>
+              {conflictCopy
+                ? <> — {conflictCopy}</>
+                : <> has <Text style={{ fontWeight: '600' }}>{conflictActive}</Text>. Your barrier reads{' '}
+                    {faceMetrics.barrierStatus.toLowerCase()} — ease it back in once calm.</>}
             </Text>
           </FlutedGlass>
         )}
@@ -450,6 +476,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   harmonizer: { borderColor: 'rgba(193,140,60,0.40)', backgroundColor: '#FEF6EC' },
+  lastChip: { alignItems: 'center', paddingLeft: 12, borderLeftWidth: 1, borderLeftColor: C.line },
   gapDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.warn, flexShrink: 0 },
   browseBtn: {
     borderWidth: 1, borderColor: C.accent + '80',

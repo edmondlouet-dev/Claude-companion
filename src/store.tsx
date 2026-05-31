@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSession, signOut as authSignOut } from './services/auth';
 import type { UserProfile } from './services/auth';
@@ -6,6 +6,10 @@ import {
   DEFAULT_STRUCTURAL, DEFAULT_SHELF,
   type StructuralMetrics, type ShelfItem,
 } from './skin';
+import {
+  analyzeProductConflict, generateEditorialInsight,
+  type EditorialMetrics,
+} from './services/gemini';
 
 type AppMode = 'normal' | 'lookmax';
 
@@ -19,6 +23,7 @@ export interface ShelfProduct {
   purchaseUrl: string;
   barcode?: string;
   category?: string;
+  warningText?: string | null;   // conflict note from the Gemini cosmetic chemist
 }
 
 export interface SkinScores {
@@ -45,6 +50,7 @@ export interface QuestionnaireAnswers {
 interface StoreState {
   authed: boolean;
   pitchSeen: boolean;
+  planSeen: boolean;               // personalised plan summary shown once
   questionnaireComplete: boolean;
   user: UserProfile | null;
   owned: string[];
@@ -64,6 +70,9 @@ interface StoreState {
   ritualStreaks: Record<string, number>;
   showPremiumModal: boolean;
   questionnaireAnswers: QuestionnaireAnswers;
+  // ── AI brain ────────────────────────────────────────────────────────────────
+  isAnalyzing: boolean;            // true while a Gemini call is in flight
+  editorialInsight: string | null; // luxury-magazine read of the latest structure
 }
 
 interface StoreComputed {
@@ -76,6 +85,7 @@ interface StoreActions {
   login: (user: UserProfile) => void;
   logout: () => void;
   setPitchSeen: () => void;
+  setPlanSeen: () => void;
   completeQuestionnaire: () => void;
   addProduct: (name: string) => void;
   removeProduct: (name: string) => void;
@@ -96,11 +106,15 @@ interface StoreActions {
   saveQuestionnaire: (answers: QuestionnaireAnswers) => void;
   openPremiumModal: () => void;
   dismissPremiumModal: () => void;
+  // ── AI brokers — async, drive isAnalyzing + global re-render ─────────────────
+  analyzeLabel: (rawLabelText: string) => Promise<ShelfProduct>;
+  refreshEditorialInsight: () => Promise<void>;
 }
 
 type FullStore = StoreState & StoreActions & StoreComputed;
 
 const PITCH_KEY          = '@poreless_pitch_seen';
+const PLAN_KEY           = '@poreless_plan_seen';
 const QUESTIONNAIRE_KEY  = '@poreless_questionnaire_done';
 const ANSWERS_KEY        = '@poreless_questionnaire_answers';
 
@@ -141,6 +155,7 @@ const DEFAULT_USER_SHELF: ShelfProduct[] = [
 const defaults: StoreState = {
   authed: false,
   pitchSeen: false,
+  planSeen: false,
   questionnaireComplete: false,
   user: null,
   owned: [
@@ -176,6 +191,8 @@ const defaults: StoreState = {
   ritualStreaks: {},
   showPremiumModal: false,
   questionnaireAnswers: EMPTY_ANSWERS,
+  isAnalyzing: false,
+  editorialInsight: null,
 };
 
 const StoreContext = createContext<FullStore>({} as FullStore);
@@ -183,13 +200,19 @@ const StoreContext = createContext<FullStore>({} as FullStore);
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<StoreState>(defaults);
 
+  // Always-fresh mirror of state for async brokers that would otherwise close
+  // over a stale snapshot.
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
   useEffect(() => {
     Promise.all([
       getSession(),
       AsyncStorage.getItem(QUESTIONNAIRE_KEY),
       AsyncStorage.getItem(PITCH_KEY),
       AsyncStorage.getItem(ANSWERS_KEY),
-    ]).then(([user, qDone, pSeen, answersRaw]) => {
+      AsyncStorage.getItem(PLAN_KEY),
+    ]).then(([user, qDone, pSeen, answersRaw, planSeen]) => {
       let answers = EMPTY_ANSWERS;
       if (answersRaw) { try { answers = { ...EMPTY_ANSWERS, ...JSON.parse(answersRaw) }; } catch {} }
       setState(s => ({
@@ -198,6 +221,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         user: user ?? null,
         questionnaireComplete: !!(user || qDone),
         pitchSeen: !!pSeen,
+        planSeen: !!planSeen,
         questionnaireAnswers: answers,
       }));
     });
@@ -214,6 +238,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const setPitchSeen = () => {
     AsyncStorage.setItem(PITCH_KEY, '1');
     setState(s => ({ ...s, pitchSeen: true }));
+  };
+
+  const setPlanSeen = () => {
+    AsyncStorage.setItem(PLAN_KEY, '1');
+    setState(s => ({ ...s, planSeen: true }));
   };
 
   const completeQuestionnaire = () => {
@@ -302,6 +331,49 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const openPremiumModal    = () => setState(s => ({ ...s, showPremiumModal: true }));
   const dismissPremiumModal = () => setState(s => ({ ...s, showPremiumModal: false }));
 
+  // ── AI brokers ──────────────────────────────────────────────────────────────
+  // The label scanner hands us raw OCR text; we run it through the Gemini cosmetic
+  // chemist (against the live barrier reading), flip isAnalyzing so the dashboard
+  // can shimmer, and return a fully-formed shelf product carrying any warningText.
+  const analyzeLabel = async (rawLabelText: string): Promise<ShelfProduct> => {
+    setState(s => ({ ...s, isAnalyzing: true }));
+    try {
+      const barrier = stateRef.current.structural.barrierStatus;
+      const result = await analyzeProductConflict(barrier, rawLabelText);
+      const q = `${result.brand} ${result.name}`.trim();
+      return {
+        id: `lbl-${Date.now()}`,
+        name: result.name,
+        brand: result.brand,
+        ingredients: result.ingredients,
+        remainingVolume: 100,
+        purchaseUrl: `https://www.amazon.co.uk/s?k=${encodeURIComponent(q)}&tag=poreless-20`,
+        category: result.category,
+        warningText: result.conflictDetected ? result.warningText : null,
+      };
+    } finally {
+      setState(s => ({ ...s, isAnalyzing: false }));
+    }
+  };
+
+  // Generates the luxury editorial paragraph from the current structural metrics.
+  const refreshEditorialInsight = async (): Promise<void> => {
+    setState(s => ({ ...s, isAnalyzing: true }));
+    try {
+      const m = stateRef.current.structural;
+      const metrics: EditorialMetrics = {
+        canthalTilt: m.canthalTilt,
+        midfaceRatio: m.midfaceRatio,
+        fluidRetention: m.fluidRetention,
+        barrierStatus: m.barrierStatus,
+      };
+      const insight = await generateEditorialInsight(metrics);
+      setState(s => ({ ...s, editorialInsight: insight, isAnalyzing: false }));
+    } catch {
+      setState(s => ({ ...s, isAnalyzing: false }));
+    }
+  };
+
   const isPremium = state.user?.premium ?? false;
 
   return (
@@ -310,13 +382,14 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       userProfile: { isPremium, streakCount: state.streak, passiveTrackingEnabled: state.passiveTrackingEnabled },
       faceMetrics: state.structural,
       selectedTraditionId: state.activeRitual,
-      login, logout, setPitchSeen, completeQuestionnaire,
+      login, logout, setPitchSeen, setPlanSeen, completeQuestionnaire,
       addProduct, removeProduct, setMode,
       setLastScores, setActiveRitual, setTemperatureUnit,
       updateMetrics, togglePassiveTracking, setPremiumStatus,
       addBarcodeProduct, removeBarcodeProduct, logRoutineUsage, completeDailyRitual,
       incrementSurfaceScan, recordStructuralScan, saveQuestionnaire,
       openPremiumModal, dismissPremiumModal,
+      analyzeLabel, refreshEditorialInsight,
     }}>
       {children}
     </StoreContext.Provider>

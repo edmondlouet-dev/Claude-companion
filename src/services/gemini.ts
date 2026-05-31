@@ -12,8 +12,20 @@
  */
 import { GEMINI_API_KEY, GEMINI_ENABLED, GEMINI_MODEL } from '../config/firebase';
 
+// Google API keys start with "AIza" and auth via the ?key= query param.
+// Anything else (e.g. an "AQ."/OAuth-style access token) is sent as a Bearer
+// header instead, so both credential shapes have a chance at the live path.
+const IS_API_KEY = GEMINI_API_KEY.startsWith('AIza');
+
 const ENDPOINT = (model: string) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
+  (IS_API_KEY ? `?key=${GEMINI_API_KEY}` : '');
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (!IS_API_KEY) h['Authorization'] = `Bearer ${GEMINI_API_KEY}`;
+  return h;
+}
 
 function keyReady(): boolean {
   return GEMINI_ENABLED && !!GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY';
@@ -37,7 +49,7 @@ async function callGemini(prompt: string, imageBase64?: string): Promise<string>
   }
   const res = await fetch(ENDPOINT(GEMINI_MODEL), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({
       contents: [{ parts }],
       generationConfig: { temperature: 0.4, responseMimeType: 'application/json' },
@@ -283,6 +295,134 @@ export function detectStepCompletion(
     }
   }, 80);
   return () => clearInterval(id);
+}
+
+// ── 5. Editorial insight from structural metrics ───────────────────────────────
+// Spec: generateEditorialInsight(metrics) → an elegant, luxury-magazine style
+// paragraph interpreting the user's facial geometry in a comforting, premium
+// tone. Pure: takes numbers, returns a string. Never touches UI state.
+
+export interface EditorialMetrics {
+  canthalTilt: number;
+  midfaceRatio: number;
+  fluidRetention?: string;
+  barrierStatus?: string;
+}
+
+export async function generateEditorialInsight(metrics: EditorialMetrics): Promise<string> {
+  if (keyReady()) {
+    try {
+      const prompt =
+        'You are the lead writer for a luxury skincare magazine. In ONE warm, ' +
+        'elegant paragraph (max 55 words, no bullet points, no numbers repeated ' +
+        'mechanically), interpret this reader\'s facial geometry in a comforting, ' +
+        'premium tone that makes them feel seen and capable. Metrics — canthal ' +
+        `tilt ${metrics.canthalTilt}°, midface ratio ${metrics.midfaceRatio.toFixed(2)}, ` +
+        `fluid retention ${metrics.fluidRetention ?? 'moderate'}, barrier ` +
+        `${metrics.barrierStatus ?? 'balanced'}. Return STRICT JSON: { "insight": string }.`;
+      const raw = await callGemini(prompt);
+      const p = JSON.parse(raw);
+      if (p?.insight) return String(p.insight).trim();
+    } catch {
+      /* fall through to sim */
+    }
+  }
+
+  await new Promise(r => setTimeout(r, 1100));
+
+  const tiltPhrase = metrics.canthalTilt < 0
+    ? 'a soft, downward outer eye that reads as gentle and approachable'
+    : metrics.canthalTilt > 1
+      ? 'a naturally lifted outer eye that carries an alert, open quality'
+      : 'a balanced, even eye line that frames the face quietly';
+  const midPhrase = metrics.midfaceRatio > 1.08
+    ? 'a midface with character — a touch of asymmetry that sculpting will refine over the weeks'
+    : 'a well-proportioned midface that holds light beautifully';
+  const barrier = (metrics.barrierStatus ?? '').toLowerCase();
+  const barrierPhrase = /sensiti|fatig/.test(barrier)
+    ? 'Your barrier is asking for gentleness right now, and that is its own kind of progress.'
+    : 'Your barrier reads resilient — the strong, quiet foundation everything else is built on.';
+
+  return `You carry ${tiltPhrase}, set above ${midPhrase}. ${barrierPhrase} ` +
+         `This is a face with definition to work with, not against — small, consistent rituals will do the rest.`;
+}
+
+// ── 6. Cosmetic-chemist product conflict analysis ──────────────────────────────
+// Spec: analyzeProductConflict(barrierStatus, rawLabelText) → strict JSON
+// { brand, name, ingredients[], conflictDetected, warningText }.
+
+export interface ProductConflict {
+  brand: string;
+  name: string;
+  ingredients: string[];
+  category: string;
+  conflictDetected: boolean;
+  warningText: string | null;
+}
+
+const HARSH_ACTIVES = [
+  'retinol', 'retinyl', 'tretinoin', 'retinoic', 'adapalene',
+  'glycolic acid', 'salicylic acid', 'benzoyl peroxide',
+  'ascorbic acid', 'vitamin c', 'lactic acid', 'azelaic acid',
+];
+
+function firstHarshActive(ingredients: string[]): string | null {
+  const lower = ingredients.map(i => i.toLowerCase());
+  for (const h of HARSH_ACTIVES) {
+    if (lower.some(ing => ing.includes(h))) return h;
+  }
+  return null;
+}
+
+export async function analyzeProductConflict(
+  barrierStatus: string,
+  rawLabelText: string,
+): Promise<ProductConflict> {
+  const barrierFatigued = /sensiti|fatig/i.test(barrierStatus);
+
+  if (keyReady()) {
+    try {
+      const prompt =
+        'You are an expert cosmetic chemist. From the OCR label text below, return ' +
+        'STRICT JSON: { "brand": string, "name": string, "ingredients": string[] ' +
+        '(lowercase INCI, max 12), "category": one of cleanser|antiox|serum|' +
+        'exfoliant|retinoid|moisturizer|spf, "conflictDetected": boolean, ' +
+        '"warningText": string | null }. The user\'s barrier status is "' +
+        barrierStatus + '". Set conflictDetected true ONLY if the product contains ' +
+        'a strong active (retinoid, AHA/BHA, benzoyl peroxide, high-dose vitamin C) ' +
+        'AND the barrier reads sensitive or fatigued. warningText: one short, ' +
+        'reassuring sentence on how to ease it in, else null.\nOCR TEXT:\n' + rawLabelText;
+      const raw = await callGemini(prompt);
+      const p = JSON.parse(raw);
+      const ingredients = Array.isArray(p.ingredients)
+        ? p.ingredients.map((s: any) => String(s).toLowerCase()).slice(0, 12) : [];
+      return {
+        brand: String(p.brand ?? ''),
+        name: String(p.name ?? 'Unknown Product'),
+        ingredients,
+        category: String(p.category ?? 'moisturizer'),
+        conflictDetected: !!p.conflictDetected,
+        warningText: p.warningText ? String(p.warningText) : null,
+      };
+    } catch {
+      /* fall through to sim */
+    }
+  }
+
+  // SIM — reuse the deterministic label parser, then apply the chemist rule.
+  const profile = await profileFromLabelText(rawLabelText);
+  const harsh = firstHarshActive(profile.ingredients);
+  const conflictDetected = !!harsh && barrierFatigued;
+  return {
+    brand: profile.brand,
+    name: profile.name,
+    ingredients: profile.ingredients,
+    category: profile.category,
+    conflictDetected,
+    warningText: conflictDetected
+      ? `Contains ${harsh} — ease it in two nights a week while your barrier settles.`
+      : null,
+  };
 }
 
 export const GEMINI_LIVE = keyReady();

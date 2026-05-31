@@ -11,6 +11,7 @@ import { MetricStrip } from '../components/MetricStrip';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { FaceLogo } from '../components/FaceLogo';
 import { PremiumModal } from '../components/PremiumModal';
+import { SkeletonLines } from '../components/Skeleton';
 import { analyzeStructuralFrame, GEMINI_LIVE } from '../services/gemini';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
@@ -32,7 +33,7 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
   const {
     structural, userProfile, usageCounters,
     updateMetrics, recordStructuralScan, showPremiumModal, openPremiumModal, dismissPremiumModal,
-    setPremiumStatus,
+    setPremiumStatus, editorialInsight, isAnalyzing, refreshEditorialInsight,
   } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [active, setActive]     = useState('overall');
@@ -76,6 +77,8 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
       updateMetrics(result);          // canthalTilt, midfaceRatio, fluidRetention, barrierStatus
       recordStructuralScan();
       setScanStep('done');
+      // Ask the Gemini brain for a luxury-magazine read of the new geometry.
+      refreshEditorialInsight();
     } catch {
       setScanStep('idle');
       Alert.alert('Scan failed', 'Please try again.');
@@ -146,6 +149,22 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
         <View style={{ marginBottom: 16 }}>
           <MetricStrip metrics={LM_METRICS} active={active} onPick={setActive} />
         </View>
+
+        {/* AI editorial read — shimmers while the Gemini brain composes it */}
+        {(isAnalyzing || editorialInsight) && (
+          <FlutedGlass padding={16} mode="lookmax" style={{ marginBottom: 14 }}>
+            <Text style={[T.kicker, { color: C.accent, marginBottom: 10 }]}>
+              ✦ EDITORIAL READ {GEMINI_LIVE ? '· GEMINI' : ''}
+            </Text>
+            {isAnalyzing && !editorialInsight ? (
+              <SkeletonLines lines={3} lastWidth="55%" />
+            ) : (
+              <Text style={[T.body, { color: C.ink2, lineHeight: 22, fontSize: 15, fontStyle: 'italic' }]}>
+                {editorialInsight}
+              </Text>
+            )}
+          </FlutedGlass>
+        )}
 
         {/* Face diagram / live scan camera */}
         <FlutedGlass padding={16} mode="lookmax" style={{ marginBottom: 14 }}>

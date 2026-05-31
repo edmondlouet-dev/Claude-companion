@@ -23,6 +23,7 @@ import { TabBar } from './src/components/TabBar';
 import { Login } from './src/screens/Login';
 import { SignUp } from './src/screens/SignUp';
 import { Questionnaire } from './src/screens/Questionnaire';
+import { PlanSummary } from './src/screens/PlanSummary';
 import { Pitch } from './src/screens/Pitch';
 import { Today } from './src/screens/Today';
 import { Scan } from './src/screens/Scan';
@@ -38,7 +39,10 @@ type TabKey = 'today' | 'scan' | 'proportions' | 'rituals' | 'you';
 type AuthScreen = 'login' | 'signup';
 
 const MainApp: React.FC = () => {
-  const { authed, pitchSeen, questionnaireComplete, setPitchSeen, setMode } = useStore();
+  const {
+    authed, pitchSeen, planSeen, questionnaireComplete,
+    setPitchSeen, setPlanSeen, setMode,
+  } = useStore();
   const [activeTab, setActiveTab] = useState<TabKey>('today');
   const [showProducts, setShowProducts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -57,6 +61,11 @@ const MainApp: React.FC = () => {
   // Step 2: Onboarding questionnaire
   if (!questionnaireComplete) {
     return <Questionnaire />;
+  }
+
+  // Step 2.5: Personalised plan summary (once)
+  if (!planSeen) {
+    return <PlanSummary onContinue={setPlanSeen} />;
   }
 
   // Step 3: Auth
