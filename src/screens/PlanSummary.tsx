@@ -12,12 +12,39 @@ import React, { useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { FaceLogo } from '../components/FaceLogo';
 import { FlutedGlass } from '../components/FlutedGlass';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
+
+// Highlights skin-science terms in terracotta orange inline within a Text block.
+const HIGHLIGHT_TERMS = [
+  'BHA cadence', 'barrier support', 'barrier-first', 'barrier',
+  'ceramides', 'ceramide', 'retinoid', 'SPF', 'antioxidant', 'humectant',
+  'hyaluronic acid', 'resurfacing', 'nightly retinoid', 'vitamin C + SPF',
+  'actives', 'layering', 'pigment', 'BHA', 'consistent', 'fragrance-free',
+];
+
+function HighlightedLine({ text, style }: { text: string; style?: object }) {
+  const sorted = [...HIGHLIGHT_TERMS].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(
+    `(${sorted.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+    'gi',
+  );
+  const parts = text.split(pattern);
+  return (
+    <Text style={style}>
+      {parts.map((part, i) =>
+        i % 2 === 1
+          ? <Text key={i} style={{ color: '#E07A5F', fontWeight: '600' }}>{part}</Text>
+          : <Text key={i}>{part}</Text>,
+      )}
+    </Text>
+  );
+}
 
 // Concern → the plan's centre of gravity.
 const CONCERN_PLAN: Record<string, { focus: string; target: number; goal: string; line: string }> = {
@@ -101,7 +128,7 @@ export const PlanSummary: React.FC<Props> = ({ onContinue }) => {
 
           {/* Primary goal card with the ring of targets */}
           <FlutedGlass padding={18} style={{ marginTop: 18, marginBottom: 16 }}>
-            <Text style={[T.kicker, { color: C.ink3, marginBottom: 14 }]}>YOUR TARGETS</Text>
+            <Text style={[T.kicker, { color: C.accent, marginBottom: 14, letterSpacing: 2.4 }]}>YOUR TARGETS</Text>
             <View style={styles.ringRow}>
               {targets.map(t => (
                 <View key={t.label} style={styles.target}>
@@ -118,12 +145,11 @@ export const PlanSummary: React.FC<Props> = ({ onContinue }) => {
 
           {/* Editorial read — personalised to their answers */}
           <FlutedGlass padding={16} style={{ marginBottom: 16 }}>
-            <Text style={[T.kicker, { color: C.accent, marginBottom: 8 }]}>HOW WE'LL GET THERE</Text>
-            <Text style={[T.body, { color: C.ink2, lineHeight: 22, fontSize: 15 }]}>
-              For your <Text style={{ fontStyle: 'italic' }}>{skin.toLowerCase()}</Text> skin, your routine leads with{' '}
-              {plan.line}. We'll track it on every scan and adjust as your skin responds — so the plan keeps
-              fitting you, not the other way around.
-            </Text>
+            <Text style={[T.kicker, { color: C.accent, marginBottom: 10, letterSpacing: 2.4 }]}>HOW WE'LL GET THERE</Text>
+            <HighlightedLine
+              text={`For your ${skin.toLowerCase()} skin, your routine leads with ${plan.line}. We'll track it on every scan and adjust as your skin responds — so the plan keeps fitting you, not the other way around.`}
+              style={[T.body, { color: C.ink2, lineHeight: 24, fontSize: 16 }]}
+            />
           </FlutedGlass>
 
           {/* Theme chips */}
@@ -141,10 +167,13 @@ export const PlanSummary: React.FC<Props> = ({ onContinue }) => {
           )}
         </ScrollView>
 
-        {/* Pinned CTA */}
+        {/* Pinned CTA — frosted glass with pale terracotta tint */}
         <View style={[styles.ctaBar, { paddingBottom: insets.bottom + 16 }]}>
-          <TouchableOpacity style={styles.cta} onPress={onContinue} activeOpacity={0.88}>
-            <Text style={[T.button, { color: C.bg, fontSize: 15 }]}>Begin my protocol →</Text>
+          <TouchableOpacity onPress={onContinue} activeOpacity={0.88} style={styles.ctaOuter}>
+            <BlurView intensity={55} tint="light" style={styles.ctaBlur}>
+              <View style={styles.ctaTint} />
+              <Text style={styles.ctaText}>Begin my protocol →</Text>
+            </BlurView>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -163,9 +192,9 @@ const styles = StyleSheet.create({
   ringRow: { flexDirection: 'row', justifyContent: 'space-between' },
   target: { alignItems: 'center', flex: 1 },
   ring: {
-    width: 60, height: 60, borderRadius: 30,
+    width: 62, height: 62, borderRadius: 31,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.line,
+    borderWidth: 1.5, borderColor: C.line2,
   },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: R.pill, borderWidth: 1 },
@@ -177,8 +206,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(251,250,247,0.92)',
     borderTopWidth: 1, borderTopColor: C.line,
   },
-  cta: {
-    backgroundColor: C.ink, borderRadius: R.md,
-    paddingVertical: 16, alignItems: 'center',
+  ctaOuter: {
+    borderRadius: R.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(224,122,95,0.35)',
+  },
+  ctaBlur: {
+    paddingVertical: 18,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  ctaTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(224,122,95,0.18)',
+  },
+  ctaText: {
+    fontFamily: 'CormorantGaramond_400Regular',
+    fontSize: 22,
+    color: '#3A1A08',
+    letterSpacing: 0.1,
+    zIndex: 1,
   },
 });

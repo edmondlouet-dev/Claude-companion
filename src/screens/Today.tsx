@@ -53,13 +53,13 @@ const APPLY_MOTION: Record<ProductCategory, ARMotion> = {
 };
 
 const BROWSE_URLS: Record<ProductCategory, string> = {
-  cleanser:    'https://www.sephora.com/search?keyword=gentle+face+cleanser',
-  moisturizer: 'https://www.sephora.com/search?keyword=face+moisturizer',
-  spf:         'https://www.sephora.com/search?keyword=mineral+sunscreen+spf+face',
-  serum:       'https://www.sephora.com/search?keyword=treatment+serum',
-  antiox:      'https://www.sephora.com/search?keyword=vitamin+c+serum+face',
-  retinoid:    'https://www.sephora.com/search?keyword=retinol+serum',
-  exfoliant:   'https://www.sephora.com/search?keyword=chemical+exfoliant+BHA+AHA',
+  cleanser:    'https://www.sephora.com/search?keyword=CeraVe+La+Roche-Posay+gentle+cleanser',
+  moisturizer: 'https://www.sephora.com/search?keyword=La+Mer+Tatcha+luxury+moisturizer+cream',
+  spf:         'https://www.sephora.com/search?keyword=EltaMD+UV+Clear+mineral+SPF+tinted',
+  serum:       'https://www.sephora.com/search?keyword=hyaluronic+acid+2%25+B5+serum+treatment',
+  antiox:      'https://www.sephora.com/search?keyword=SkinCeuticals+CE+Ferulic+vitamin+C+serum',
+  retinoid:    'https://www.sephora.com/search?keyword=Differin+adapalene+gel+retinoid+night',
+  exfoliant:   "https://www.sephora.com/search?keyword=Paula%27s+Choice+BHA+2%25+salicylic+exfoliant",
 };
 
 const CONCERN_INSIGHT: Record<string, string> = {
@@ -99,6 +99,18 @@ export const Today: React.FC = () => {
   const [quickAdd, setQuickAdd]         = useState('');
   const [showAmbient, setShowAmbient]   = useState(false);
 
+  // Live clock — updates every minute to drive greeting + AM/PM routine switch.
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hour     = now.getHours();
+  const isPM     = hour >= 17;
+  const timeOfDay: 'AM' | 'PM' = isPM ? 'PM' : 'AM';
+  const greeting = hour < 12 ? 'good morning' : hour < 17 ? 'good afternoon' : 'good evening';
+
   // The delta card "pops" each time a different score chip is tapped.
   const popAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -106,7 +118,7 @@ export const Today: React.FC = () => {
     Animated.spring(popAnim, { toValue: 1, useNativeDriver: true, damping: 12, stiffness: 220 }).start();
   }, [activeMetric]);
 
-  const routine = buildRoutine(owned, 'AM');
+  const routine = buildRoutine(owned, timeOfDay);
   const gaps    = routineGaps(owned, questionnaireAnswers.concern);
 
   const ritual   = activeRitual ? getRitual(activeRitual) : undefined;
@@ -127,10 +139,9 @@ export const Today: React.FC = () => {
   const completedCount = routine.filter((_, i) => i < 2).length;
   const liveProgress   = routine.length > 0 ? completedCount / routine.length : 0;
 
-  const today  = new Date();
   const days   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const dateStr = `${days[today.getDay()]} · ${months[today.getMonth()]} ${today.getDate()}`;
+  const dateStr = `${days[now.getDay()]} · ${months[now.getMonth()]} ${now.getDate()}`;
   const firstName = user?.name?.split(' ')[0]?.toLowerCase() ?? 'alex';
 
   const UV = 6;
@@ -217,7 +228,7 @@ export const Today: React.FC = () => {
         <View style={{ marginBottom: 14 }}>
           <Text style={[T.kicker, { marginBottom: 5 }]}>{dateStr} · {tempDisplay} · UV {UV}</Text>
           <Text style={[T.h1, { fontSize: 30 }]}>
-            good morning,{' '}
+            {greeting},{' '}
             <Text style={{ fontStyle: 'italic', color: C.accentInk }}>{firstName}</Text>
           </Text>
         </View>
@@ -308,7 +319,7 @@ export const Today: React.FC = () => {
 
         {/* Routine */}
         <View style={styles.sectionHeader}>
-          <Text style={[T.kicker, { flex: 1 }]}>THIS MORNING · AUTO-GENERATED</Text>
+          <Text style={[T.kicker, { flex: 1 }]}>{isPM ? 'THIS EVENING' : 'THIS MORNING'} · AUTO-GENERATED</Text>
           <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{routine.length} steps</Text>
         </View>
 

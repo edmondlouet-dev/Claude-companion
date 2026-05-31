@@ -332,7 +332,7 @@ export const Rituals: React.FC = () => {
         {/* Footer note */}
         <View style={styles.footerNote}>
           <Text style={[T.kicker, { color: C.ink4, textAlign: 'center', lineHeight: 16 }]}>
-            ✦ ACTIVE RITUAL · adapts tomorrow's Today routine{'\n'}
+            ✦ ACTIVE RITUAL · adapts tomorrow's routine{'\n'}
             Blueprint & synergy read your latest structural scan
           </Text>
         </View>

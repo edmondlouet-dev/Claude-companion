@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions,
   ActivityIndicator, Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Settings as SettingsIcon } from 'lucide-react-native';
+import { Settings as SettingsIcon, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Background } from '../components/Background';
 import { MetricStrip } from '../components/MetricStrip';
@@ -36,24 +36,42 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
     setPremiumStatus, editorialInsight, isAnalyzing, refreshEditorialInsight,
   } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
-  const [active, setActive]     = useState('overall');
-  const [scanStep, setScanStep] = useState<ScanStep>('idle');
+  const [active, setActive]         = useState('tilt');
+  const [scanStep, setScanStep]     = useState<ScanStep>('idle');
+  const [expandedInsight, setExpandedInsight] = useState<number | null>(null);
   const cameraRef = useRef<any>(null);
+  const autoStarted = useRef(false);
 
   const locked = !userProfile.isPremium &&
     usageCounters.structuralScansThisWeek >= 1 &&
     isWithin7Days(usageCounters.lastStructuralScanDate);
+
+  // Start camera immediately on mount if permission already granted, or request it.
+  useEffect(() => {
+    if (autoStarted.current || locked) return;
+    if (!permission) return;
+    if (permission.granted) {
+      autoStarted.current = true;
+      setScanStep('camera');
+    } else if (permission.canAskAgain) {
+      requestPermission().then(res => {
+        if (res.granted && !autoStarted.current) {
+          autoStarted.current = true;
+          setScanStep('camera');
+        }
+      });
+    }
+  }, [permission?.granted]);
 
   const tiltLabel = structural.canthalTilt < 0 ? 'Slightly Downward'
     : structural.canthalTilt > 0 ? 'Positive' : 'Neutral';
 
   // Live metrics drive the strip so a fresh scan visibly changes the numbers.
   const LM_METRICS = [
-    { key: 'overall', value: '7.4', label: 'Overall', dot: 'good' as const },
     { key: 'tilt',    value: `${structural.canthalTilt}°`, label: 'Tilt', dot: (structural.canthalTilt < 0 ? 'warn' : 'good') as 'warn' | 'good' },
     { key: 'midface', value: structural.midfaceRatio.toFixed(2), label: 'Midface', dot: (structural.midfaceRatio > 1.08 ? 'warn' : 'good') as 'warn' | 'good' },
     { key: 'fluid',   value: structural.fluidRetention, label: 'Fluid', dot: (structural.fluidRetention === 'Low' ? 'good' : 'warn') as 'warn' | 'good' },
-    { key: 'skin',    value: '7.8', label: 'Skin', dot: 'good' as const },
+    { key: 'barrier', value: structural.barrierStatus.split(' / ')[0] ?? 'N/A', label: 'Barrier', dot: (/sensiti|fatig/i.test(structural.barrierStatus) ? 'warn' : 'good') as 'warn' | 'good' },
   ];
 
   const startScan = async () => {
@@ -154,7 +172,7 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
         {(isAnalyzing || editorialInsight) && (
           <FlutedGlass padding={16} mode="lookmax" style={{ marginBottom: 14 }}>
             <Text style={[T.kicker, { color: C.accent, marginBottom: 10 }]}>
-              ✦ EDITORIAL READ {GEMINI_LIVE ? '· GEMINI' : ''}
+              ✦ PORELESS AI · EDITORIAL READ
             </Text>
             {isAnalyzing && !editorialInsight ? (
               <SkeletonLines lines={3} lastWidth="55%" />
@@ -185,7 +203,9 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
                 <View style={[styles.frameCorner, styles.frameBR]} />
                 <View style={styles.scanStatus}>
                   <Text style={[T.kicker, { color: 'white', fontSize: 9 }]}>
-                    {scanStep === 'scanning' ? '· mapping 68 landmarks ·' : '· centre your face · look ahead ·'}
+                    {scanStep === 'scanning'
+                      ? '· mapping 68 landmarks ·'
+                      : '· align face · natural light · look ahead ·'}
                   </Text>
                 </View>
                 {scanStep === 'scanning' && (
@@ -203,22 +223,38 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
         <View style={styles.footer}>
           <Text style={[T.kicker, { color: C.ink3 }]}>METRICS — OVERALL</Text>
           <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3 }]}>
-            {GEMINI_LIVE ? 'GEMINI · LIVE' : 'GEMINI · SIM'}
+            {GEMINI_LIVE ? 'PORELESS AI · LIVE' : 'PORELESS AI · SIM'}
           </Text>
         </View>
 
-        <Text style={[T.kicker, { marginBottom: 8, marginTop: 8 }]}>INSIGHTS · FROM YOUR SCAN</Text>
-        {insights.map((ins, i) => (
-          <FlutedGlass key={i} padding={12} mode="lookmax" style={{ marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Text style={[T.body, { fontWeight: '600', fontSize: 13, flex: 1 }]}>{ins.title}</Text>
-              <View style={[styles.insightTag, { backgroundColor: ins.tagVariant === 'sage' ? C.sageSoft : '#FEF3E2' }]}>
-                <Text style={[T.pill, { color: ins.tagVariant === 'sage' ? C.sage : C.warn }]}>{ins.tag}</Text>
-              </View>
-            </View>
-            <Text style={[T.bodySm, { color: C.ink3, marginTop: 6, lineHeight: 17 }]}>{ins.body}</Text>
-          </FlutedGlass>
-        ))}
+        <Text style={[T.kicker, { marginBottom: 8, marginTop: 8 }]}>INSIGHTS · TAP TO EXPAND</Text>
+        {insights.map((ins, i) => {
+          const isOpen = expandedInsight === i;
+          return (
+            <TouchableOpacity
+              key={i}
+              onPress={() => setExpandedInsight(isOpen ? null : i)}
+              activeOpacity={0.8}
+            >
+              <FlutedGlass padding={12} mode="lookmax" style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[T.body, { fontWeight: '600', fontSize: 13, flex: 1 }]}>{ins.title}</Text>
+                  <View style={[styles.insightTag, { backgroundColor: ins.tagVariant === 'sage' ? C.sageSoft : '#FEF3E2' }]}>
+                    <Text style={[T.pill, { color: ins.tagVariant === 'sage' ? C.sage : C.warn }]}>{ins.tag}</Text>
+                  </View>
+                  <View style={{ marginLeft: 8 }}>
+                    {isOpen
+                      ? <ChevronUp size={16} strokeWidth={1.4} color={C.ink3} />
+                      : <ChevronDown size={16} strokeWidth={1.4} color={C.ink3} />}
+                  </View>
+                </View>
+                {isOpen && (
+                  <Text style={[T.bodySm, { color: C.ink3, marginTop: 10, lineHeight: 17 }]}>{ins.body}</Text>
+                )}
+              </FlutedGlass>
+            </TouchableOpacity>
+          );
+        })}
 
         {/* Scan CTA — camera flow, gated for a second scan within 7 days */}
         {scanStep === 'camera' ? (

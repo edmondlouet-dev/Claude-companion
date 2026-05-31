@@ -122,7 +122,7 @@ export const Scan: React.FC = () => {
           </View>
           <View style={[styles.aiBadge, GEMINI_LIVE ? { borderColor: C.accent } : {}]}>
             <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3, fontSize: 9 }]}>
-              {GEMINI_LIVE ? 'GEMINI · LIVE' : 'GEMINI · SIM'}
+              {GEMINI_LIVE ? 'AI · LIVE' : 'AI · SIM'}
             </Text>
           </View>
         </View>

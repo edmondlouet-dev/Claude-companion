@@ -113,11 +113,10 @@ export const Pitch: React.FC<Props> = ({ onContinue }) => {
               <FaceLogo size={64} animated color={C.ink} />
               <Text style={styles.wordmark}>poreless.</Text>
               <Text style={[T.h2, { textAlign: 'center', marginTop: 6, fontSize: 22, color: C.ink }]}>
-                backed by real science.
+                Hey there.
               </Text>
-              <Text style={[T.bodySm, { color: C.ink3, textAlign: 'center', marginTop: 10, lineHeight: 18 }]}>
-                Not guesswork. Not trends.{'\n'}
-                Peer-reviewed research applied to your skin.
+              <Text style={[T.bodySm, { color: C.ink3, textAlign: 'center', marginTop: 10, lineHeight: 20, fontSize: 15, fontFamily: 'CormorantGaramond_400Italic' }]}>
+                Ready to awaken your skin's{'\n'}architectural potential?
               </Text>
             </View>
 
