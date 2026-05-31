@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSession, signOut as authSignOut } from './services/auth';
 import type { UserProfile } from './services/auth';
 import {
-  DEFAULT_STRUCTURAL, DEFAULT_SHELF,
+  DEFAULT_STRUCTURAL,
   type StructuralMetrics, type ShelfItem,
 } from './skin';
 import {
@@ -29,6 +29,34 @@ export interface ShelfProduct {
 export interface SkinScores {
   overall: number; hydration: number; texture: number;
   pores: number; redness: number; oil: number; acne: number; tone: number;
+}
+
+// ── Single source of truth for the shelf ──────────────────────────────────────
+// The Rituals synergy/blueprint engine needs a lightweight {active, tag} view of
+// each product. Rather than maintain a second parallel array, we DERIVE it from
+// the rich userShelf so there is exactly one inventory to keep in sync.
+const ACTIVE_KEYWORDS = [
+  'retinol', 'retinyl', 'tretinoin', 'adapalene', 'ascorbic acid', 'vitamin c',
+  'niacinamide', 'salicylic acid', 'glycolic acid', 'lactic acid', 'azelaic',
+  'hyaluronic acid', 'ceramide', 'squalane', 'panthenol', 'glycerin',
+];
+
+function primaryActive(p: ShelfProduct): string {
+  for (const ing of p.ingredients) {
+    const low = ing.toLowerCase();
+    const hit = ACTIVE_KEYWORDS.find(k => low.includes(k));
+    if (hit) return hit;
+  }
+  return (p.ingredients[0] ?? '').toLowerCase();
+}
+
+export function deriveShelfItems(products: ShelfProduct[]): ShelfItem[] {
+  return products.map(p => ({
+    id: p.id,
+    name: p.name,
+    active: primaryActive(p),
+    tag: p.name.length <= 18 ? p.name : (p.brand || p.name.slice(0, 18)),
+  }));
 }
 
 interface UsageCounters {
@@ -62,7 +90,6 @@ interface StoreState {
   activeRitual: string | null;
   temperatureUnit: 'C' | 'F';
   structural: StructuralMetrics;
-  shelf: ShelfItem[];
   // ── New global state ──────────────────────────────────────────────────────
   passiveTrackingEnabled: boolean;
   usageCounters: UsageCounters;
@@ -79,6 +106,7 @@ interface StoreComputed {
   userProfile: { isPremium: boolean; streakCount: number; passiveTrackingEnabled: boolean };
   faceMetrics: StructuralMetrics;
   selectedTraditionId: string | null;
+  shelf: ShelfItem[];           // derived from userShelf — single source of truth
 }
 
 interface StoreActions {
@@ -179,7 +207,6 @@ const defaults: StoreState = {
   activeRitual: null,
   temperatureUnit: 'C',
   structural: DEFAULT_STRUCTURAL,
-  shelf: DEFAULT_SHELF,
   passiveTrackingEnabled: true,
   usageCounters: {
     surfaceScansToday: 0,
@@ -382,6 +409,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       userProfile: { isPremium, streakCount: state.streak, passiveTrackingEnabled: state.passiveTrackingEnabled },
       faceMetrics: state.structural,
       selectedTraditionId: state.activeRitual,
+      shelf: deriveShelfItems(state.userShelf),
       login, logout, setPitchSeen, setPlanSeen, completeQuestionnaire,
       addProduct, removeProduct, setMode,
       setLastScores, setActiveRitual, setTemperatureUnit,

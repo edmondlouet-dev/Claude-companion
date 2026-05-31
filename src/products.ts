@@ -96,6 +96,69 @@ export function buildRoutine(owned: string[], when: Tone): RoutineStep[] {
   return result;
 }
 
+// ── Evening compensator ────────────────────────────────────────────────────────
+// When the user reaches their evening routine having (likely) missed the morning,
+// we intelligently fold each missed AM step into tonight — UNLESS it clashes with
+// what's already scheduled for PM, in which case we drop it with a clear reason.
+export type CompAction = 'carried' | 'dropped';
+
+export interface Compensation {
+  step: string;
+  category: ProductCategory;
+  action: CompAction;
+  reason: string;
+}
+
+export interface CompensatedRoutine {
+  steps: RoutineStep[];
+  compensations: Compensation[];
+}
+
+export function buildEveningRoutine(owned: string[], amCompleted: boolean): CompensatedRoutine {
+  const pm = buildRoutine(owned, 'PM');
+  if (amCompleted) return { steps: pm, compensations: [] };
+
+  const am = buildRoutine(owned, 'AM');
+  const pmCats        = new Set(pm.map(s => s.category));
+  const pmHasRetinoid = pm.some(s => s.category === 'retinoid');
+  const pmHasExfoliant = pm.some(s => s.category === 'exfoliant');
+
+  const compensations: Compensation[] = [];
+  const carried: RoutineStep[] = [];
+
+  for (const step of am) {
+    if (pmCats.has(step.category)) continue;   // already covered tonight
+    if (step.category === 'spf') continue;      // SPF at night is pointless — skip silently
+
+    // Conflict rules — actives that must not share a night with a retinoid/acid.
+    if (step.category === 'antiox' && (pmHasRetinoid || pmHasExfoliant)) {
+      compensations.push({
+        step: STEP_LABEL[step.category], category: step.category, action: 'dropped',
+        reason: `Vitamin C destabilises beside tonight's ${pmHasRetinoid ? 'retinoid' : 'exfoliant'} — held for the morning.`,
+      });
+      continue;
+    }
+    if (step.category === 'exfoliant' && pmHasRetinoid) {
+      compensations.push({
+        step: STEP_LABEL[step.category], category: step.category, action: 'dropped',
+        reason: `An acid over tonight's retinoid risks over-exfoliation — held for the morning.`,
+      });
+      continue;
+    }
+
+    carried.push(step);
+    compensations.push({
+      step: STEP_LABEL[step.category], category: step.category, action: 'carried',
+      reason: `Missed this morning — safely folded into tonight.`,
+    });
+  }
+
+  // Re-thread carried steps into canonical layering order alongside the PM steps.
+  const merged = [...pm, ...carried];
+  const ordered = ORDER.flatMap(cat => merged.filter(s => s.category === cat));
+  return { steps: ordered, compensations };
+}
+
 // Concerns from onboarding map to the active a routine should add to address them.
 const CONCERN_GAP: Record<string, GapWarning> = {
   acne:      { key: 'exfoliant', label: 'BHA Exfoliant',    reason: 'You flagged breakouts — salicylic acid clears pores and cuts comedones.' },
@@ -110,18 +173,24 @@ export function routineGaps(owned: string[], concerns: string[] = []): GapWarnin
     .map(n => CATALOG[n]?.category)
     .filter(Boolean) as ProductCategory[];
 
-  const gaps: GapWarning[] = [];
-  if (!cats.includes('cleanser'))
-    gaps.push({ key: 'cleanser', label: 'Cleanser', reason: 'Essential first step — removes overnight oil and preps skin for actives.' });
-  if (!cats.includes('moisturizer'))
-    gaps.push({ key: 'moisturizer', label: 'Moisturizer', reason: 'Locks in hydration and strengthens the barrier.' });
-  if (!cats.some(c => c === 'spf'))
-    gaps.push({ key: 'spf', label: 'Broad-Spectrum SPF', reason: 'UV is the #1 cause of premature aging. Non-negotiable.' });
-
-  // Personalised gaps from the onboarding concerns — only if not already owned.
+  // Personalised gaps from the onboarding concerns come FIRST — they're the most
+  // relevant to why this user is here, so Browse surfaces them ahead of staples.
+  const concernGaps: GapWarning[] = [];
   for (const c of concerns) {
     const g = CONCERN_GAP[c];
-    if (g && !cats.includes(g.key) && !gaps.some(x => x.key === g.key)) gaps.push(g);
+    if (g && !cats.includes(g.key) && !concernGaps.some(x => x.key === g.key)) concernGaps.push(g);
   }
-  return gaps;
+
+  const staples: GapWarning[] = [];
+  if (!cats.includes('cleanser'))
+    staples.push({ key: 'cleanser', label: 'Cleanser', reason: 'Essential first step — removes overnight oil and preps skin for actives.' });
+  if (!cats.includes('moisturizer'))
+    staples.push({ key: 'moisturizer', label: 'Moisturizer', reason: 'Locks in hydration and strengthens the barrier.' });
+  if (!cats.some(c => c === 'spf'))
+    staples.push({ key: 'spf', label: 'Broad-Spectrum SPF', reason: 'UV is the #1 cause of premature aging. Non-negotiable.' });
+
+  // De-dupe staples that a concern gap already covers.
+  const merged = [...concernGaps];
+  for (const s of staples) if (!merged.some(g => g.key === s.key)) merged.push(s);
+  return merged;
 }

@@ -88,6 +88,46 @@ export const Products: React.FC<Props> = ({ onBack }) => {
 
   const barrierFatigued = /sensiti|fatig/i.test(faceMetrics.barrierStatus);
 
+  // ── Unified shelf ─────────────────────────────────────────────────────────
+  // One inventory, two sources: INCI-scanned products (with tracked volume) and
+  // routine-linked catalog products (with their actives as the ingredient
+  // profile). Every item renders the same way — name, ingredient chips, and a
+  // volume bar where we track it — so there's a single "My Shelf", not two lists.
+  type UnifiedItem = {
+    id: string;
+    name: string;
+    subtitle: string;
+    ingredients: string[];
+    volume: number | null;
+    tone?: string;
+    purchaseUrl?: string;
+    source: 'inci' | 'routine';
+  };
+
+  const unified: UnifiedItem[] = [
+    ...userShelf.map(p => ({
+      id: p.id, name: p.name, subtitle: p.brand,
+      ingredients: p.ingredients, volume: p.remainingVolume,
+      purchaseUrl: p.purchaseUrl, source: 'inci' as const,
+    })),
+    ...owned
+      .filter(name => !userShelf.some(p => p.name === name))
+      .map(name => {
+        const info = CATALOG[name];
+        return {
+          id: `owned-${name}`, name,
+          subtitle: info?.category ? info.category.toUpperCase() : 'ROUTINE',
+          ingredients: info?.actives ?? [],
+          volume: null,
+          tone: info?.tone === 'both' ? 'AM/PM' : (info?.tone ?? 'AM/PM'),
+          source: 'routine' as const,
+        };
+      }),
+  ];
+
+  const removeUnified = (item: UnifiedItem) =>
+    item.source === 'inci' ? removeBarcodeProduct(item.id) : removeProduct(item.name);
+
   const handleSearch = useCallback((text: string) => {
     setQuery(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -133,7 +173,7 @@ export const Products: React.FC<Props> = ({ onBack }) => {
               My shelf
             </Text>
             <Text style={[T.kicker, { color: C.ink3, marginTop: 2 }]}>
-              {userShelf.length} products · INCI data linked
+              {unified.length} products · INCI data linked
             </Text>
           </View>
           {/* Label scanner CTA */}
@@ -152,20 +192,20 @@ export const Products: React.FC<Props> = ({ onBack }) => {
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* ── INCI Shelf (barcode-scanned products) ──────────────────────── */}
+          {/* ── Unified shelf — one inventory, every item with INCI + volume ── */}
           <View style={styles.sectionH}>
             <Text style={T.kicker}>MY SHELF · INCI TRACKED</Text>
-            <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{userShelf.length}</Text>
+            <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{unified.length}</Text>
           </View>
 
-          {userShelf.map(product => {
-            const harsh   = harshActiveIn(product.ingredients);
+          {unified.map(item => {
+            const harsh    = harshActiveIn(item.ingredients);
             const conflict = barrierFatigued && !!harsh;
-            const low      = product.remainingVolume < 25;
+            const low      = item.volume !== null && item.volume < 25;
 
             return (
-              <FlutedGlass key={product.id} padding={12} style={{ marginBottom: 10 }}>
-                {/* Conflict note — softer, shorter */}
+              <FlutedGlass key={item.id} padding={12} style={{ marginBottom: 10 }}>
+                {/* Conflict note — barrier-aware, surfaces on any harsh active */}
                 {conflict && (
                   <View style={styles.conflictBanner}>
                     <TriangleAlert size={13} strokeWidth={1.3} color={C.warn} />
@@ -176,43 +216,58 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                 )}
 
                 <View style={styles.productRow}>
-                  {/* Icon */}
-                  <View style={[styles.thumb, { backgroundColor: C.accentSoft }]}>
-                    <ShoppingBag size={16} strokeWidth={1.2} color={C.accentInk} />
+                  {/* Icon — differentiates a scanned product from a routine staple */}
+                  <View style={[styles.thumb, item.source === 'inci' && { backgroundColor: C.accentSoft }]}>
+                    {item.source === 'inci'
+                      ? <ShoppingBag size={16} strokeWidth={1.2} color={C.accentInk} />
+                      : <Droplet size={16} strokeWidth={1.2} color={C.ink3} />}
                   </View>
 
                   {/* Info */}
                   <View style={{ flex: 1 }}>
-                    <Text style={[T.body, { fontWeight: '600', fontSize: 13, color: C.ink }]} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                    <Text style={[T.kicker, { color: C.ink3, marginTop: 2 }]}>{product.brand}</Text>
-
-                    {/* Volume row */}
-                    <View style={styles.volumeRow}>
-                      <VolumeBar value={product.remainingVolume} />
-                      <Text style={[T.num, {
-                        fontSize: 10,
-                        color: product.remainingVolume < 20 ? C.warn : C.ink3,
-                      }]}>
-                        {product.remainingVolume}%
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[T.body, { fontWeight: '600', fontSize: 13, color: C.ink, flex: 1 }]} numberOfLines={1}>
+                        {item.name}
                       </Text>
+                      {item.source === 'routine' && item.tone && <Pill label={item.tone} />}
                     </View>
+                    <Text style={[T.kicker, { color: C.ink3, marginTop: 2 }]}>{item.subtitle}</Text>
 
-                    {/* Top ingredients */}
-                    <View style={styles.ingredientRow}>
-                      {product.ingredients.slice(0, 3).map(ing => (
-                        <View key={ing} style={styles.ingChip}>
-                          <Text style={[T.pill, { fontSize: 9, color: C.ink3 }]}>{ing}</Text>
-                        </View>
-                      ))}
-                    </View>
+                    {/* Volume row — tracked for scanned items; routine items show a label */}
+                    {item.volume !== null ? (
+                      <View style={styles.volumeRow}>
+                        <VolumeBar value={item.volume} />
+                        <Text style={[T.num, { fontSize: 10, color: item.volume < 20 ? C.warn : C.ink3 }]}>
+                          {item.volume}%
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[T.kicker, { color: C.ink4, fontSize: 8, marginTop: 6, letterSpacing: 0.6 }]}>
+                        ROUTINE-LINKED · VOLUME NOT TRACKED
+                      </Text>
+                    )}
+
+                    {/* Ingredient profile — INCI for scanned, actives for catalog */}
+                    {item.ingredients.length > 0 && (
+                      <View style={styles.ingredientRow}>
+                        {item.ingredients.slice(0, 3).map(ing => (
+                          <View key={ing} style={styles.ingChip}>
+                            <Text style={[T.pill, { fontSize: 9, color: C.ink3 }]}>{ing}</Text>
+                          </View>
+                        ))}
+                        {item.ingredients.length > 3 && (
+                          <View style={styles.ingChip}>
+                            <Text style={[T.pill, { fontSize: 9, color: C.ink4 }]}>+{item.ingredients.length - 3}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
 
-                  {/* Remove from shelf */}
+                  {/* Remove */}
                   <TouchableOpacity
                     style={styles.removeBtn}
-                    onPress={() => removeBarcodeProduct(product.id)}
+                    onPress={() => removeUnified(item)}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                   >
@@ -220,57 +275,17 @@ export const Products: React.FC<Props> = ({ onBack }) => {
                   </TouchableOpacity>
                 </View>
 
-                {/* Restock button (visible when low) */}
-                {low && (
+                {/* Restock button (visible when a tracked volume is low) */}
+                {low && item.purchaseUrl && (
                   <TouchableOpacity
                     style={styles.restockBtn}
-                    onPress={() => Linking.openURL(product.purchaseUrl)}
+                    onPress={() => Linking.openURL(item.purchaseUrl!)}
                     activeOpacity={0.8}
                   >
                     <ArrowUpRight size={13} strokeWidth={1.2} color={C.accentInk} />
                     <Text style={[T.button, { fontSize: 11, color: C.accentInk }]}>Restock Product</Text>
                   </TouchableOpacity>
                 )}
-              </FlutedGlass>
-            );
-          })}
-
-          {/* ── Owned products (routine-linked) ─────────────────────────── */}
-          <View style={[styles.sectionH, { marginTop: 10 }]}>
-            <Text style={T.kicker}>OWNED · ROUTINE LINKED</Text>
-            <Text style={[T.num, { fontSize: 10, color: C.ink3 }]}>{owned.length}</Text>
-          </View>
-
-          {owned.map(name => {
-            const info = CATALOG[name];
-            const toneLabel = info?.tone === 'both' ? 'AM/PM' : (info?.tone ?? 'AM/PM');
-            return (
-              <FlutedGlass key={name} padding={12} style={{ marginBottom: 8 }}>
-                <View style={styles.productRow}>
-                  <View style={styles.thumb}>
-                    <Droplet size={16} strokeWidth={1.2} color={C.ink3} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[T.body, { fontWeight: '600', fontSize: 13, color: C.ink }]} numberOfLines={1}>
-                      {name}
-                    </Text>
-                    <View style={styles.pillRow}>
-                      {info?.category && <Pill label={info.category} />}
-                      <Pill label={toneLabel} />
-                      {(info?.actives ?? []).slice(0, 2).map(a => (
-                        <Pill key={a} label={a} variant="accent" />
-                      ))}
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.removeBtn}
-                    onPress={() => removeProduct(name)}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                  >
-                    <Minus size={16} strokeWidth={1.2} color={C.ink3} />
-                  </TouchableOpacity>
-                </View>
               </FlutedGlass>
             );
           })}

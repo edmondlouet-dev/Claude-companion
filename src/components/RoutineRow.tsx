@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
   LayoutAnimation, Platform, UIManager,
@@ -19,15 +19,32 @@ interface Props {
   time?: string;
   defaultDone?: boolean;
   why?: string;
+  tag?: string;                 // e.g. "FOR YOUR ACNE" or "CARRIED FROM AM"
+  // Controlled mode: when `done` is supplied the parent owns completion state
+  // (so tapping the Live Activity can check this row off, and vice-versa).
+  done?: boolean;
+  onToggle?: (next: boolean) => void;
 }
 
 export const RoutineRow: React.FC<Props> = ({
-  idx, stepName, productName, time, defaultDone = false, why,
+  idx, stepName, productName, time, defaultDone = false, why, tag,
+  done: controlledDone, onToggle,
 }) => {
-  const [done, setDone] = useState(defaultDone);
+  const isControlled = controlledDone !== undefined;
+  const [internalDone, setInternalDone] = useState(defaultDone);
+  const done = isControlled ? controlledDone! : internalDone;
   const [open, setOpen] = useState(false);
   // Fade content when done (no strikethrough — just dimmer + heavier glass)
-  const contentOpacity = useRef(new Animated.Value(defaultDone ? 0.55 : 1)).current;
+  const contentOpacity = useRef(new Animated.Value(done ? 0.55 : 1)).current;
+
+  // Keep the fade in sync when completion is driven from outside (Live Activity).
+  useEffect(() => {
+    Animated.timing(contentOpacity, {
+      toValue: done ? 0.55 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [done]);
 
   const toggle = () => {
     // Haptics aren't available on every surface (web / some sandboxes); never
@@ -35,12 +52,8 @@ export const RoutineRow: React.FC<Props> = ({
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     const next = !done;
-    setDone(next);
-    Animated.timing(contentOpacity, {
-      toValue: next ? 0.55 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
+    if (isControlled) onToggle?.(next);
+    else setInternalDone(next);
   };
 
   return (
@@ -80,6 +93,12 @@ export const RoutineRow: React.FC<Props> = ({
               )}
             </View>
             <Text style={[T.bodySm, { color: C.ink3, marginTop: 1 }]}>{productName}</Text>
+
+            {tag && (
+              <View style={styles.tagChip}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            )}
 
             {why && (
               <TouchableOpacity
@@ -150,5 +169,22 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: C.surface2,
     borderRadius: R.md,
+  },
+  tagChip: {
+    alignSelf: 'flex-start',
+    marginTop: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: R.pill,
+    backgroundColor: C.accentSoft,
+    borderWidth: 1,
+    borderColor: C.accent + '44',
+  },
+  tagText: {
+    fontFamily: 'JetBrainsMono_500Medium',
+    fontSize: 8.5,
+    letterSpacing: 0.5,
+    color: C.accentInk,
+    textTransform: 'uppercase',
   },
 });

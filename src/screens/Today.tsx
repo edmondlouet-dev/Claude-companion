@@ -15,7 +15,7 @@ import { SkeletonLines } from '../components/Skeleton';
 import { AmbientModeOverlay, type AmbientStep } from '../components/AmbientModeOverlay';
 import type { ARMotion } from '../components/ARSculptOverlay';
 import { useStore, type SkinScores } from '../store';
-import { buildRoutine, routineGaps, STEP_LABEL, type ProductCategory } from '../products';
+import { buildRoutine, buildEveningRoutine, routineGaps, STEP_LABEL, type ProductCategory } from '../products';
 import { getRitual, adaptRoutineForRitual } from '../rituals';
 import { C, R, T, S } from '../tokens';
 
@@ -118,8 +118,49 @@ export const Today: React.FC = () => {
     Animated.spring(popAnim, { toValue: 1, useNativeDriver: true, damping: 12, stiffness: 220 }).start();
   }, [activeMetric]);
 
-  const routine = buildRoutine(owned, timeOfDay);
+  // Evening folds any missed morning steps into tonight (conflict-aware); the
+  // morning is a straight AM routine.
+  const evening = isPM ? buildEveningRoutine(owned, false) : null;
+  const routine = evening ? evening.steps : buildRoutine(owned, 'AM');
+  const compensations = evening?.compensations ?? [];
+  const carried = compensations.filter(c => c.action === 'carried');
+  const dropped = compensations.filter(c => c.action === 'dropped');
+  const carriedCats = new Set(carried.map(c => c.category));
+
   const gaps    = routineGaps(owned, questionnaireAnswers.concern);
+
+  // Concern flagging → which routine categories directly serve the user's goals,
+  // so the relevant steps get a "for your <concern>" badge.
+  const CONCERN_CATS: Record<string, ProductCategory[]> = {
+    acne:      ['exfoliant', 'serum'],
+    texture:   ['exfoliant', 'retinoid'],
+    darkspots: ['antiox'],
+    aging:     ['retinoid', 'antiox'],
+    dryness:   ['serum', 'moisturizer'],
+    redness:   ['moisturizer'],
+  };
+  const primaryConcern = questionnaireAnswers.concern[0];
+  const concernCats = new Set(primaryConcern ? (CONCERN_CATS[primaryConcern] ?? []) : []);
+  const CONCERN_NAME: Record<string, string> = {
+    acne: 'acne', texture: 'texture', darkspots: 'dark spots',
+    aging: 'aging', dryness: 'dryness', redness: 'sensitivity',
+  };
+
+  // Completion is tracked here so tapping the Live Activity checks off the next
+  // step in the routine below (and toggling a row updates the widget).
+  const [completed, setCompleted] = useState<Set<number>>(() => new Set([0, 1]));
+  const toggleStep = (i: number) =>
+    setCompleted(prev => {
+      const n = new Set(prev);
+      n.has(i) ? n.delete(i) : n.add(i);
+      return n;
+    });
+  const completeNext = () =>
+    setCompleted(prev => {
+      const n = new Set(prev);
+      for (let i = 0; i < routine.length; i++) { if (!n.has(i)) { n.add(i); break; } }
+      return n;
+    });
 
   const ritual   = activeRitual ? getRitual(activeRitual) : undefined;
   const tomorrow = activeRitual ? adaptRoutineForRitual(activeRitual, owned) : [];
@@ -135,9 +176,13 @@ export const Today: React.FC = () => {
     motion:      APPLY_MOTION[s.category] ?? 'apply',
   }));
 
-  // Live Activity widget data
-  const completedCount = routine.filter((_, i) => i < 2).length;
+  // Live Activity widget data — driven by the real completion set.
+  const completedCount = routine.length > 0
+    ? Array.from(completed).filter(i => i < routine.length).length
+    : 0;
   const liveProgress   = routine.length > 0 ? completedCount / routine.length : 0;
+  const allDone        = routine.length > 0 && completedCount >= routine.length;
+  const nextStepIdx    = routine.findIndex((_, i) => !completed.has(i));
 
   const days   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
@@ -214,13 +259,15 @@ export const Today: React.FC = () => {
           </View>
         </View>
 
-        {/* Live Activity widget — always shown when routine is in progress */}
+        {/* Live Activity widget — tap to check off the next routine step below */}
         {routine.length > 0 && (
           <LiveActivityWidget
-            currentStep={STEP_LABEL[routine[Math.min(completedCount, routine.length - 1)]?.category] ?? ''}
+            currentStep={STEP_LABEL[routine[nextStepIdx >= 0 ? nextStepIdx : routine.length - 1]?.category] ?? ''}
             progress={liveProgress}
             streak={streak}
             ritualName={ritual?.name}
+            onAdvance={completeNext}
+            allDone={allDone}
           />
         )}
 
@@ -364,17 +411,43 @@ export const Today: React.FC = () => {
           </TouchableOpacity>
         ) : (
           <>
-            {routine.map((step, i) => (
-              <RoutineRow
-                key={step.name}
-                idx={i + 1}
-                stepName={STEP_LABEL[step.category]}
-                productName={step.name}
-                time={i < 2 ? `7:4${i + 2}` : undefined}
-                defaultDone={i < 2}
-                why={WHY[step.category]}
-              />
-            ))}
+            {routine.map((step, i) => {
+              const tag = carriedCats.has(step.category)
+                ? 'carried from AM'
+                : concernCats.has(step.category) && primaryConcern
+                  ? `for your ${CONCERN_NAME[primaryConcern] ?? primaryConcern}`
+                  : undefined;
+              return (
+                <RoutineRow
+                  key={`${step.name}-${i}`}
+                  idx={i + 1}
+                  stepName={STEP_LABEL[step.category]}
+                  productName={step.name}
+                  time={!isPM && i < 2 ? `7:4${i + 2}` : undefined}
+                  why={WHY[step.category]}
+                  tag={tag}
+                  done={completed.has(i)}
+                  onToggle={() => toggleStep(i)}
+                />
+              );
+            })}
+
+            {/* Evening compensator note — what was folded in or held back */}
+            {isPM && compensations.length > 0 && (
+              <FlutedGlass padding={12} style={styles.compensator}>
+                <Text style={[T.kicker, { color: C.accent, marginBottom: 6 }]}>✦ EVENING COMPENSATOR</Text>
+                {carried.length > 0 && (
+                  <Text style={[T.bodySm, { color: C.ink2, lineHeight: 17 }]}>
+                    Folded in {carried.map(c => c.step).join(', ')} — missed this morning and safe to do tonight.
+                  </Text>
+                )}
+                {dropped.map(d => (
+                  <Text key={d.step} style={[T.bodySm, { color: C.ink3, lineHeight: 17, marginTop: carried.length ? 6 : 0 }]}>
+                    <Text style={{ fontWeight: '600', color: C.ink2 }}>{d.step} held back</Text> — {d.reason}
+                  </Text>
+                ))}
+              </FlutedGlass>
+            )}
           </>
         )}
 
@@ -415,7 +488,9 @@ export const Today: React.FC = () => {
               <Text style={[T.num, { fontSize: 10, color: C.warn }]}>{gaps.length} missing</Text>
             </View>
             <Text style={[T.bodySm, { color: C.ink3, marginBottom: 10, lineHeight: 17 }]}>
-              Your stack is incomplete. Browse to find options on Sephora.
+              {primaryConcern
+                ? `Prioritised for your ${CONCERN_NAME[primaryConcern] ?? primaryConcern} goal. Browse curated matches below.`
+                : 'Your stack is incomplete. Browse curated matches below.'}
             </Text>
             {gaps.map(g => (
               <FlutedGlass key={g.key} padding={12} style={{ marginBottom: 8 }}>
@@ -487,6 +562,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   harmonizer: { borderColor: 'rgba(193,140,60,0.40)', backgroundColor: '#FEF6EC' },
+  compensator: { marginTop: 4, marginBottom: 4, borderColor: C.accent + '44', backgroundColor: C.accentSoft },
   lastChip: { alignItems: 'center', paddingLeft: 12, borderLeftWidth: 1, borderLeftColor: C.line },
   gapDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.warn, flexShrink: 0 },
   browseBtn: {
