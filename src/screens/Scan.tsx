@@ -12,7 +12,6 @@ import { FlutedGlass } from '../components/FlutedGlass';
 import { MetricStrip } from '../components/MetricStrip';
 import { analyzeSkinFrame, type SkinAnalysis } from '../services/gemini';
 import { useStore } from '../store';
-import { GEMINI_LIVE } from '../services/gemini';
 import { C, R, T, S } from '../tokens';
 
 type Step = 'preview' | 'scanning' | 'done';
@@ -44,7 +43,7 @@ const metricsFromScores = (s: any) => [
 
 export const Scan: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { setLastScores, updateMetrics, incrementSurfaceScan } = useStore();
+  const { setLastScores, updateMetrics, incrementSurfaceScan, geminiLive } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep]     = useState<Step>('preview');
   const [scores, setScores] = useState<SkinAnalysis | null>(null);
@@ -120,9 +119,9 @@ export const Scan: React.FC = () => {
               face <Text style={{ fontStyle: 'italic', color: C.accentInk }}>scan</Text>
             </Text>
           </View>
-          <View style={[styles.aiBadge, GEMINI_LIVE ? { borderColor: C.accent } : {}]}>
-            <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3, fontSize: 9 }]}>
-              {GEMINI_LIVE ? 'AI · LIVE' : 'AI · SIM'}
+          <View style={[styles.aiBadge, geminiLive ? { borderColor: C.accent } : {}]}>
+            <Text style={[T.kicker, { color: geminiLive ? C.accent : C.ink3, fontSize: 9 }]}>
+              {geminiLive ? 'AI · LIVE' : 'AI · SIM'}
             </Text>
           </View>
         </View>

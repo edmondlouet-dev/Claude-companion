@@ -12,7 +12,7 @@ import { FlutedGlass } from '../components/FlutedGlass';
 import { FaceLogo } from '../components/FaceLogo';
 import { PremiumModal } from '../components/PremiumModal';
 import { SkeletonLines } from '../components/Skeleton';
-import { analyzeStructuralFrame, GEMINI_LIVE } from '../services/gemini';
+import { analyzeStructuralFrame } from '../services/gemini';
 import { useStore } from '../store';
 import { C, R, T, S } from '../tokens';
 
@@ -33,7 +33,7 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
   const {
     structural, userProfile, usageCounters,
     updateMetrics, recordStructuralScan, showPremiumModal, openPremiumModal, dismissPremiumModal,
-    setPremiumStatus, editorialInsight, isAnalyzing, refreshEditorialInsight,
+    setPremiumStatus, editorialInsight, isAnalyzing, refreshEditorialInsight, geminiLive,
   } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [active, setActive]         = useState('tilt');
@@ -222,8 +222,8 @@ export const Proportions: React.FC<Props> = ({ onOpenSettings }) => {
 
         <View style={styles.footer}>
           <Text style={[T.kicker, { color: C.ink3 }]}>METRICS · STRUCTURAL</Text>
-          <Text style={[T.kicker, { color: GEMINI_LIVE ? C.accent : C.ink3 }]}>
-            {GEMINI_LIVE ? 'PORELESS AI · LIVE' : 'PORELESS AI · SIM'}
+          <Text style={[T.kicker, { color: geminiLive ? C.accent : C.ink3 }]}>
+            {geminiLive ? 'PORELESS AI · LIVE' : 'PORELESS AI · SIM'}
           </Text>
         </View>
 

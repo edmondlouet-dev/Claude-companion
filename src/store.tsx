@@ -7,7 +7,8 @@ import {
   type StructuralMetrics, type ShelfItem,
 } from './skin';
 import {
-  analyzeProductConflict, generateEditorialInsight,
+  analyzeProductConflict, analyzeProductFromImage, generateEditorialInsight,
+  verifyGeminiKey, GEMINI_LIVE,
   type EditorialMetrics,
 } from './services/gemini';
 
@@ -100,6 +101,7 @@ interface StoreState {
   // ── AI brain ────────────────────────────────────────────────────────────────
   isAnalyzing: boolean;            // true while a Gemini call is in flight
   editorialInsight: string | null; // luxury-magazine read of the latest structure
+  geminiLive: boolean;             // verified at launch — drives truthful LIVE/SIM badges
 }
 
 interface StoreComputed {
@@ -135,8 +137,9 @@ interface StoreActions {
   openPremiumModal: () => void;
   dismissPremiumModal: () => void;
   // ── AI brokers — async, drive isAnalyzing + global re-render ─────────────────
-  analyzeLabel: (rawLabelText: string) => Promise<ShelfProduct>;
+  analyzeLabel: (rawLabelText: string, imageBase64?: string) => Promise<ShelfProduct>;
   refreshEditorialInsight: () => Promise<void>;
+  resetApp: () => Promise<void>;   // wipe all local data → restart at the intro
 }
 
 type FullStore = StoreState & StoreActions & StoreComputed;
@@ -145,6 +148,18 @@ const PITCH_KEY          = '@poreless_pitch_seen';
 const PLAN_KEY           = '@poreless_plan_seen';
 const QUESTIONNAIRE_KEY  = '@poreless_questionnaire_done';
 const ANSWERS_KEY        = '@poreless_questionnaire_answers';
+// Bump this token to force a one-time fresh start on the next launch: every
+// "@poreless*" key is wiped once, so the app reopens at the intro screen.
+const RESET_KEY          = '@poreless_reset_token';
+const RESET_TOKEN        = '2026-06-fresh-start';
+
+// Clears every locally-persisted key this app owns (onboarding flags, answers,
+// session, local users) but preserves the reset token so the wipe runs once.
+async function wipePorelessStorage() {
+  const keys = await AsyncStorage.getAllKeys();
+  const ours = keys.filter(k => k.startsWith('@poreless') && k !== RESET_KEY);
+  if (ours.length) await AsyncStorage.multiRemove(ours);
+}
 
 const EMPTY_ANSWERS: QuestionnaireAnswers = {
   goals: [], concern: [], skintype: [], frequency: [], age: [], source: [],
@@ -220,6 +235,7 @@ const defaults: StoreState = {
   questionnaireAnswers: EMPTY_ANSWERS,
   isAnalyzing: false,
   editorialInsight: null,
+  geminiLive: GEMINI_LIVE,
 };
 
 const StoreContext = createContext<FullStore>({} as FullStore);
@@ -233,13 +249,24 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => { stateRef.current = state; }, [state]);
 
   useEffect(() => {
-    Promise.all([
-      getSession(),
-      AsyncStorage.getItem(QUESTIONNAIRE_KEY),
-      AsyncStorage.getItem(PITCH_KEY),
-      AsyncStorage.getItem(ANSWERS_KEY),
-      AsyncStorage.getItem(PLAN_KEY),
-    ]).then(([user, qDone, pSeen, answersRaw, planSeen]) => {
+    (async () => {
+      // One-time fresh-start wipe when the reset token changes — guarantees the
+      // app reopens at the intro screen with no saved profile.
+      try {
+        const token = await AsyncStorage.getItem(RESET_KEY);
+        if (token !== RESET_TOKEN) {
+          await wipePorelessStorage();
+          await AsyncStorage.setItem(RESET_KEY, RESET_TOKEN);
+        }
+      } catch {}
+
+      const [user, qDone, pSeen, answersRaw, planSeen] = await Promise.all([
+        getSession(),
+        AsyncStorage.getItem(QUESTIONNAIRE_KEY),
+        AsyncStorage.getItem(PITCH_KEY),
+        AsyncStorage.getItem(ANSWERS_KEY),
+        AsyncStorage.getItem(PLAN_KEY),
+      ]);
       let answers = EMPTY_ANSWERS;
       if (answersRaw) { try { answers = { ...EMPTY_ANSWERS, ...JSON.parse(answersRaw) }; } catch {} }
       setState(s => ({
@@ -251,7 +278,10 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         planSeen: !!planSeen,
         questionnaireAnswers: answers,
       }));
-    });
+
+      // Confirm the Gemini key actually authenticates so badges tell the truth.
+      verifyGeminiKey().then(ok => setState(s => ({ ...s, geminiLive: ok }))).catch(() => {});
+    })();
   }, []);
 
   const login = (user: UserProfile) =>
@@ -358,15 +388,26 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const openPremiumModal    = () => setState(s => ({ ...s, showPremiumModal: true }));
   const dismissPremiumModal = () => setState(s => ({ ...s, showPremiumModal: false }));
 
+  // Wipe all local data and return to the very first screen (the intro/pitch).
+  const resetApp = async () => {
+    try { await wipePorelessStorage(); } catch {}
+    try { await authSignOut(); } catch {}
+    try { await AsyncStorage.setItem(RESET_KEY, RESET_TOKEN); } catch {}
+    setState({ ...defaults, geminiLive: stateRef.current.geminiLive });
+  };
+
   // ── AI brokers ──────────────────────────────────────────────────────────────
   // The label scanner hands us raw OCR text; we run it through the Gemini cosmetic
   // chemist (against the live barrier reading), flip isAnalyzing so the dashboard
   // can shimmer, and return a fully-formed shelf product carrying any warningText.
-  const analyzeLabel = async (rawLabelText: string): Promise<ShelfProduct> => {
+  const analyzeLabel = async (rawLabelText: string, imageBase64?: string): Promise<ShelfProduct> => {
     setState(s => ({ ...s, isAnalyzing: true }));
     try {
       const barrier = stateRef.current.structural.barrierStatus;
-      const result = await analyzeProductConflict(barrier, rawLabelText);
+      // With a label photo we use Gemini Vision (real OCR); otherwise the text path.
+      const result = imageBase64
+        ? await analyzeProductFromImage(barrier, imageBase64)
+        : await analyzeProductConflict(barrier, rawLabelText);
       const q = `${result.brand} ${result.name}`.trim();
       return {
         id: `lbl-${Date.now()}`,
@@ -417,7 +458,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       addBarcodeProduct, removeBarcodeProduct, logRoutineUsage, completeDailyRitual,
       incrementSurfaceScan, recordStructuralScan, saveQuestionnaire,
       openPremiumModal, dismissPremiumModal,
-      analyzeLabel, refreshEditorialInsight,
+      analyzeLabel, refreshEditorialInsight, resetApp,
     }}>
       {children}
     </StoreContext.Provider>

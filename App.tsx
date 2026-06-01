@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -52,6 +52,16 @@ const MainApp: React.FC = () => {
     setActiveTab(tab);
     setMode(tab === 'proportions' ? 'lookmax' : 'normal');
   };
+
+  // A reset sends pitchSeen back to false — clear any open overlays and return
+  // to the first tab so the intro flow starts clean.
+  useEffect(() => {
+    if (!pitchSeen) {
+      setShowSettings(false);
+      setShowProducts(false);
+      setActiveTab('today');
+    }
+  }, [pitchSeen]);
 
   // Step 1: Business pitch (shown once on first install)
   if (!pitchSeen) {

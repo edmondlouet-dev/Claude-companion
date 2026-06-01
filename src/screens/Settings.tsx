@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,9 +20,20 @@ interface Props { onBack: () => void }
 
 export const Settings: React.FC<Props> = ({ onBack }) => {
   const insets = useSafeAreaInsets();
-  const { temperatureUnit, setTemperatureUnit, userProfile, togglePassiveTracking } = useStore();
+  const { temperatureUnit, setTemperatureUnit, userProfile, togglePassiveTracking, geminiLive, resetApp } = useStore();
 
   const isCelsius = temperatureUnit === 'C';
+
+  const confirmReset = () => {
+    Alert.alert(
+      'Start over?',
+      'This clears your profile, answers, shelf and sign-in on this device, and returns you to the intro. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset everything', style: 'destructive', onPress: () => { resetApp(); } },
+      ],
+    );
+  };
 
   return (
     <View style={styles.root}>
@@ -118,6 +129,24 @@ export const Settings: React.FC<Props> = ({ onBack }) => {
             ))}
           </FlutedGlass>
 
+          {/* AI engine status — reflects a real key check at launch */}
+          <Text style={[T.kicker, { marginBottom: 8 }]}>AI ENGINE</Text>
+          <FlutedGlass padding={14} style={{ marginBottom: 18 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={[styles.statusDot, { backgroundColor: geminiLive ? C.sage : C.ink4 }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[T.body, { fontWeight: '500' }]}>
+                  Poreless AI · {geminiLive ? 'Live' : 'Simulation'}
+                </Text>
+                <Text style={[T.bodySm, { color: C.ink3, marginTop: 2, lineHeight: 17 }]}>
+                  {geminiLive
+                    ? 'Connected — scans, label reads and editorial insights run on the live model.'
+                    : 'No verified key — every feature runs a realistic on-device simulation. Add an AIza Gemini key to .env to go live.'}
+                </Text>
+              </View>
+            </View>
+          </FlutedGlass>
+
           {/* App info */}
           <Text style={[T.kicker, { marginBottom: 8 }]}>ABOUT</Text>
           <FlutedGlass padding={14} style={{ marginBottom: 18 }}>
@@ -128,6 +157,15 @@ export const Settings: React.FC<Props> = ({ onBack }) => {
               Not medical advice. Always consult a dermatologist for clinical concerns.
             </Text>
           </FlutedGlass>
+
+          {/* Danger zone — start over */}
+          <Text style={[T.kicker, { marginBottom: 8 }]}>DATA</Text>
+          <TouchableOpacity style={styles.resetBtn} onPress={confirmReset} activeOpacity={0.85}>
+            <Text style={[T.button, { color: C.danger, fontSize: 13 }]}>Start over · reset all my data</Text>
+          </TouchableOpacity>
+          <Text style={[T.bodySm, { color: C.ink4, fontSize: 11, marginTop: 8, lineHeight: 16 }]}>
+            Clears your profile, answers, shelf and sign-in on this device and returns to the intro.
+          </Text>
         </ScrollView>
       </View>
     </View>
@@ -155,4 +193,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
   },
   unitBtnActive: { backgroundColor: C.accentSoft },
+  statusDot: { width: 9, height: 9, borderRadius: 5, flexShrink: 0 },
+  resetBtn: {
+    borderWidth: 1, borderColor: C.danger + '55', borderRadius: R.md,
+    paddingVertical: 13, alignItems: 'center', backgroundColor: '#FBEEEA',
+  },
 });

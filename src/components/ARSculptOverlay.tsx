@@ -23,7 +23,7 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FaceLogo } from './FaceLogo';
 import type { BlueprintIcon } from '../skin';
-import { detectStepCompletion, GEMINI_LIVE } from '../services/gemini';
+import { detectStepCompletion } from '../services/gemini';
 import { C, R, T, S } from '../tokens';
 
 const { width: W } = Dimensions.get('window');
@@ -305,8 +305,8 @@ export const ARSculptOverlay: React.FC<Props> = ({ steps, ritualName, onClose })
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <Text style={[T.kicker, { color: C.accent }]}>STEP {idx + 1} OF {steps.length}</Text>
-            <Text style={[T.kicker, { color: GEMINI_LIVE ? '#5BD66E' : 'rgba(255,255,255,0.5)', fontSize: 8 }]}>
-              {GEMINI_LIVE ? 'AI TRACKING · LIVE' : 'AI TRACKING · SIM'}
+            <Text style={[T.kicker, { color: 'rgba(255,255,255,0.5)', fontSize: 8 }]}>
+              MOTION GUIDE · ON-DEVICE
             </Text>
           </View>
           <Text style={[T.h2, { color: 'white', fontSize: 20 }]}>{step?.title}</Text>

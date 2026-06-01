@@ -18,7 +18,6 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { X, ScanText, ShoppingBag, Check, TriangleAlert } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GEMINI_LIVE } from '../services/gemini';
 import { useStore, type ShelfProduct } from '../store';
 import { C, R, T, S } from '../tokens';
 
@@ -56,7 +55,7 @@ export const ProductLabelScanner: React.FC<Props> = ({
   visible, barrierStatus, onClose, onProductAdded,
 }) => {
   const insets = useSafeAreaInsets();
-  const { analyzeLabel } = useStore();
+  const { analyzeLabel, geminiLive } = useStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase]     = useState<Phase>('aim');
   const [stage, setStage]     = useState('');   // sub-status during reading
@@ -79,18 +78,23 @@ export const ProductLabelScanner: React.FC<Props> = ({
   const capture = async () => {
     setPhase('reading');
     try {
-      // 1. Snapshot the label (best-effort; sim works without a frame)
+      // 1. Snapshot the label as base64 so Gemini Vision can read it directly.
+      let imageBase64 = '';
       if (permission?.granted && cameraRef.current) {
-        try { await cameraRef.current.takePictureAsync({ quality: 0.5 }); } catch {}
+        try {
+          const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.5 });
+          imageBase64 = photo?.base64 ?? '';
+        } catch {}
       }
-      // 2. OCR the label text
-      setStage('Reading label…');
-      const ocrText = await simulateOCR();
-      // 3. Gemini cosmetic chemist → structured profile + conflict verdict.
-      //    Routed through the store so isAnalyzing drives the dashboard shimmer
-      //    and the verdict is judged against the live barrier reading.
+      // 2. With a real photo, Gemini Vision does the OCR; without one (no camera),
+      //    fall back to a sample label so the flow still works in any environment.
+      setStage(imageBase64 ? 'Reading the label…' : 'Recognizing a sample…');
+      const ocrText = imageBase64 ? '' : await simulateOCR();
+      // 3. Cosmetic-chemist pass → structured profile + conflict verdict. Routed
+      //    through the store so isAnalyzing drives the dashboard shimmer and the
+      //    verdict is judged against the live barrier reading.
       setStage('Consulting the chemist…');
-      const shelf = await analyzeLabel(ocrText);
+      const shelf = await analyzeLabel(ocrText, imageBase64 || undefined);
       setProduct(shelf);
       setPhase('preview');
     } catch {
@@ -121,8 +125,8 @@ export const ProductLabelScanner: React.FC<Props> = ({
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <View>
             <Text style={[T.kicker, { color: 'rgba(255,255,255,0.9)', letterSpacing: 2 }]}>SCAN PRODUCT LABEL</Text>
-            <Text style={[T.kicker, { color: GEMINI_LIVE ? '#5BD66E' : 'rgba(255,255,255,0.5)', fontSize: 8, marginTop: 3 }]}>
-              {GEMINI_LIVE ? 'GEMINI VISION · LIVE' : 'GEMINI VISION · SIM'} · FREE
+            <Text style={[T.kicker, { color: geminiLive ? '#5BD66E' : 'rgba(255,255,255,0.5)', fontSize: 8, marginTop: 3 }]}>
+              {geminiLive ? 'AI VISION · LIVE' : 'AI VISION · SIM'} · FREE
             </Text>
           </View>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.8}>
